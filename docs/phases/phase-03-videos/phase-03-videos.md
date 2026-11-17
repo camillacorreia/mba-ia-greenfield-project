@@ -45,6 +45,12 @@ Entregar no `nestjs-project/` o armazenamento de vídeos e thumbnails (MinIO/S3)
 - Rodar `docker compose up minio-init` uma segunda vez termina com código 0 sem alterar os buckets
 - As suítes existentes continuam passando (`npm test -- --runInBand` e `npm run test:e2e`)
 
+**Revisão durante o implement (2026-11-17):** três itens deste SI e do SI-03.5 mudaram na execução, com motivo e evidência no `progress.md` e no `library-refs.md`:
+
+- `ioredis@^5` (instalado 5.11.1) no lugar de `^6.0.0`, porque o `typeorm@0.3.28` declara `ioredis@^5.0.4` como peer opcional e o `npm install` falha com ERESOLVE. O BullMQ 6 aceita `ioredis >=5`.
+- `@nestjs/bullmq@^11.0.5` no lugar de `^12.0.2` (SI-03.5). A linha 12 é publicada só como ESM e quebra o Jest em CommonJS, e a 11.0.5 já aceita `bullmq ^6` e Nest 11.
+- O MinIO rejeita `AbortIncompleteMultipartUpload` no `mc ilm import`. O `minio-init.sh` aplica `mc admin config set local api stale_uploads_expiry=24h`, e o critério de `mc ilm export` acima passa a ser conferido com `mc admin config get local api`. A regra de lifecycle continua sendo a referência para o S3 de produção.
+
 ---
 
 ### SI-03.2 — Configuração de storage e fila, com ambiente isolado para testes
