@@ -10,6 +10,7 @@ import {
   UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoTooLargeException,
 } from '../common/exceptions/domain.exception';
 import {
@@ -58,6 +59,7 @@ describe('VideosService', () => {
     presignUploadPart: jest.fn(),
     completeVideoUpload: jest.fn(),
     headVideo: jest.fn(),
+    presignVideoGet: jest.fn(),
   };
   const lifecycle = { markProcessing: jest.fn(), markFailed: jest.fn() };
   const processingProducer = { enqueueProcessing: jest.fn() };
@@ -419,6 +421,52 @@ describe('VideosService', () => {
       );
       expect(processingProducer.enqueueProcessing).not.toHaveBeenCalled();
       expect(lifecycle.markProcessing).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getStreamUrl', () => {
+    const PUBLIC_ID = 'AbCdEfGhIj_';
+
+    it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.FAILED])(
+      'should reject a video in %s with VideoNotReadyException',
+      async (status) => {
+        videoRepository.findOneBy.mockResolvedValue(draftVideo({ status }));
+
+        await expect(
+          service.getStreamUrl(USER_ID, PUBLIC_ID),
+        ).rejects.toBeInstanceOf(VideoNotReadyException);
+        expect(storageService.presignVideoGet).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should sign a ready video with the public signer for 1 hour and its content type', async () => {
+      videoRepository.findOneBy.mockResolvedValue(
+        draftVideo({
+          status: VideoStatus.READY,
+          upload_id: null,
+          content_type: 'video/webm',
+        }),
+      );
+      storageService.presignVideoGet.mockResolvedValue('http://signed');
+
+      await expect(service.getStreamUrl(USER_ID, PUBLIC_ID)).resolves.toBe(
+        'http://signed',
+      );
+      expect(storageService.presignVideoGet).toHaveBeenCalledWith('video-1', {
+        signer: 'public',
+        expiresIn: 3600,
+        responseContentType: 'video/webm',
+      });
+    });
+
+    it('should apply the owner check before the status check', async () => {
+      videoRepository.findOneBy.mockResolvedValue(
+        draftVideo({ status: VideoStatus.PROCESSING, channel_id: 'other' }),
+      );
+
+      await expect(
+        service.getStreamUrl(USER_ID, PUBLIC_ID),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
     });
   });
 

@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -13,6 +15,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
@@ -165,5 +168,49 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<CompleteUploadResponseDto> {
     return this.videosService.completeUpload(user.sub, publicId, dto);
+  }
+
+  @Get(':publicId/stream')
+  @HttpCode(HttpStatus.FOUND)
+  @ApiOperation({
+    summary: 'Stream a video',
+    description:
+      'Redirects to a pre-signed storage URL valid for 1 hour. The storage answers Range requests with 206 Partial Content, so players can seek without the bytes going through the API. Only for ready videos.',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to the signed storage URL',
+    headers: {
+      Location: {
+        description: 'Pre-signed GetObject URL, valid for 3600 seconds',
+        schema: { type: 'string', format: 'uri' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Video does not exist or belongs to another channel (VIDEO_NOT_FOUND)',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready for playback (VIDEO_NOT_READY)',
+    schema: ERROR_SCHEMA,
+  })
+  async stream(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const url = await this.videosService.getStreamUrl(user.sub, publicId);
+    // `@Redirect()` usa `res.redirect()`, que escreve "Found. Redirecting to ..."
+    // no corpo; o contrato pede 302 com corpo vazio.
+    res.status(HttpStatus.FOUND).location(url).end();
   }
 }

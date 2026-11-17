@@ -12,6 +12,7 @@ import {
   UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoTooLargeException,
 } from '../common/exceptions/domain.exception';
 import {
@@ -34,6 +35,7 @@ import {
   MAX_VIDEO_SIZE_BYTES,
   PART_URL_EXPIRES_IN_SECONDS,
   PUBLIC_ID_MAX_RETRIES,
+  READ_URL_EXPIRES_IN_SECONDS,
   UPLOAD_PART_SIZE_BYTES,
 } from './videos.constants';
 
@@ -202,6 +204,30 @@ export class VideosService {
     await this.lifecycle.markProcessing(video.id);
 
     return { public_id: video.public_id, status: VideoStatus.PROCESSING };
+  }
+
+  /**
+   * URL pré-assinada de leitura para streaming progressivo: o storage atende
+   * `Range` com 206, então os bytes não passam pela API (TD-07).
+   */
+  async getStreamUrl(userId: string, publicId: string): Promise<string> {
+    const video = await this.findReadyOwnedVideo(userId, publicId);
+    return this.storageService.presignVideoGet(video.id, {
+      signer: 'public',
+      expiresIn: READ_URL_EXPIRES_IN_SECONDS,
+      responseContentType: video.content_type,
+    });
+  }
+
+  private async findReadyOwnedVideo(
+    userId: string,
+    publicId: string,
+  ): Promise<Video> {
+    const video = await this.findOwnedVideo(userId, publicId);
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotReadyException();
+    }
+    return video;
   }
 
   private async insertDraft(fields: Partial<Video>): Promise<Video> {

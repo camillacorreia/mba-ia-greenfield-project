@@ -1,4 +1,10 @@
-import { DeleteObjectCommand, type S3Client } from '@aws-sdk/client-s3';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  type S3Client,
+} from '@aws-sdk/client-s3';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
@@ -8,6 +14,7 @@ import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
 import { AuthService } from '../../src/auth/auth.service';
+import { Channel } from '../../src/channels/entities/channel.entity';
 import { DomainExceptionFilter } from '../../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../../src/common/filters/validation-exception.filter';
 import queueConfig from '../../src/config/queue.config';
@@ -16,8 +23,15 @@ import { bullRootOptions } from '../../src/queue/bull-root.options';
 import { S3_INTERNAL_CLIENT } from '../../src/storage/storage.constants';
 import { StorageService } from '../../src/storage/storage.service';
 import { cleanAllTables } from '../../src/test/create-test-data-source';
-import { Video } from '../../src/videos/entities/video.entity';
+import { Video, VideoStatus } from '../../src/videos/entities/video.entity';
+import { generatePublicId } from '../../src/videos/public-id.util';
+import { User } from '../../src/users/entities/user.entity';
 import { VIDEO_PROCESSING_QUEUE } from '../../src/video-processing/video-processing.constants';
+
+/** Fixture MP4 h264/aac da SI-03.10. */
+export const SAMPLE_MP4 = readFileSync(
+  join(__dirname, '../fixtures/media/sample-h264-aac.mp4'),
+);
 
 export interface UploadedDraft {
   publicId: string;
@@ -109,6 +123,55 @@ export class VideosE2eContext {
       .expect(200);
     const { access_token } = login.body as { access_token: string };
     return { email, accessToken: access_token };
+  }
+
+  /**
+   * Semeia um vídeo direto no banco, no canal do usuário, sem passar pelo upload
+   * nem pelo worker. Em `ready`, grava a fixture MP4 na chave `{id}` do bucket.
+   */
+  async seedVideo(
+    user: AuthenticatedUser,
+    status: VideoStatus,
+    overrides: Partial<Video> = {},
+  ): Promise<Video> {
+    const owner = await this.dataSource
+      .getRepository(User)
+      .findOneByOrFail({ email: user.email });
+    const channel = await this.dataSource
+      .getRepository(Channel)
+      .findOneByOrFail({ user_id: owner.id });
+    const isReady = status === VideoStatus.READY;
+    const repository = this.dataSource.getRepository(Video);
+    const video = await repository.save(
+      repository.create({
+        public_id: generatePublicId(),
+        channel_id: channel.id,
+        status,
+        original_filename: 'aula.mp4',
+        content_type: 'video/mp4',
+        size_bytes: SAMPLE_MP4.length,
+        upload_id: null,
+        ...(isReady && {
+          duration_seconds: 1.534,
+          width: 320,
+          height: 240,
+          video_codec: 'h264',
+          audio_codec: 'aac',
+        }),
+        ...overrides,
+      }),
+    );
+    if (isReady) {
+      await this.app.get<S3Client>(S3_INTERNAL_CLIENT).send(
+        new PutObjectCommand({
+          Bucket: storageConfig().bucketVideos,
+          Key: video.id,
+          Body: SAMPLE_MP4,
+          ContentType: video.content_type,
+        }),
+      );
+    }
+    return video;
   }
 
   /**

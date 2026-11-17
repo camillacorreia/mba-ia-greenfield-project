@@ -14,3 +14,6 @@ export const PUBLIC_ID_MAX_RETRIES = 5;
 
 /** Validade das URLs de UploadPart: 1h, re-solicitáveis enquanto o vídeo está em draft (TD-02). */
 export const PART_URL_EXPIRES_IN_SECONDS = 3600;
+
+/** Validade das URLs pré-assinadas de leitura (stream e download), em segundos (TD-07). */
+export const READ_URL_EXPIRES_IN_SECONDS = 3600;

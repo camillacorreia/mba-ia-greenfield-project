@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/17 completed
+**SIs:** 11/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -125,9 +125,14 @@
 - **Observations:** none
 
 ### SI-03.15 — Endpoint GET /videos/:publicId/stream (reprodução por streaming)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 10 novos passing (5 no unit `videos.service.spec.ts`, 5 em `test/videos-stream.e2e-spec.ts`); suíte completa verde (unit 288/288, e2e 73/73, tsc e lint com exit 0)
+- **Observations:**
+  - **Desvio da ação técnica 3, `@Res()` no lugar de `@Redirect()`:** o `@Redirect()` do Nest chama o `res.redirect()` do Express, que escreve `Found. Redirecting to <url>` no corpo. O AC #1 e o contrato (`Response 302: corpo vazio`) pedem corpo vazio, e o e2e falhou nisso (1 tentativa de fix). O handler agora usa `@Res()` com `res.status(302).location(url).end()`. As exceções lançadas antes de escrever a resposta continuam passando pelos filtros globais (409/404/401 cobertos no e2e). A documentação OpenAPI do 302 com header `Location` se mantém.
+  - `READ_URL_EXPIRES_IN_SECONDS = 3600` entrou em `videos.constants.ts`, e o owner check + exigência de `ready` ficou num `findReadyOwnedVideo` privado, que o download (SI-03.16) vai reaproveitar.
+  - O unit também confere que o owner check vem antes do status: vídeo de outro canal em `processing` dá `VIDEO_NOT_FOUND`, não `VIDEO_NOT_READY`.
+  - Helper e2e: entrou `seedVideo(user, status, overrides)`, que grava a linha direto no canal do usuário e, em `ready`, sobe a fixture `sample-h264-aac.mp4` na chave `{id}` do bucket de teste; e o export `SAMPLE_MP4`.
+  - A URL pré-assinada de leitura traz `x-amz-checksum-mode=ENABLED`, que o SDK acrescenta por padrão (`responseChecksumValidation`); o MinIO aceita normalmente.
 
 ### SI-03.16 — Endpoint GET /videos/:publicId/download (download do vídeo)
 - **Status:** pending
