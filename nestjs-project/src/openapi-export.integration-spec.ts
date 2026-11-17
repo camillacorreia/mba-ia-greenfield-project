@@ -128,4 +128,98 @@ describe('exportSpec (integration)', () => {
       }
     }
   });
+
+  describe('videos', () => {
+    type Operation = {
+      tags?: string[];
+      security?: Array<Record<string, unknown>>;
+      responses: Record<
+        string,
+        { headers?: Record<string, unknown>; content?: unknown }
+      >;
+    };
+    const ERROR_REF = '#/components/schemas/ApiErrorEnvelope';
+    const VIDEO_OPERATIONS: Array<{
+      path: string;
+      method: string;
+      success: string;
+      errors: string[];
+    }> = [
+      {
+        path: '/videos',
+        method: 'post',
+        success: '201',
+        errors: ['400', '401', '404', '413', '415'],
+      },
+      {
+        path: '/videos/{publicId}',
+        method: 'get',
+        success: '200',
+        errors: ['401', '404'],
+      },
+      {
+        path: '/videos/{publicId}/upload/part-urls',
+        method: 'post',
+        success: '200',
+        errors: ['400', '401', '404', '409'],
+      },
+      {
+        path: '/videos/{publicId}/upload/complete',
+        method: 'post',
+        success: '202',
+        errors: ['400', '401', '404', '409', '422'],
+      },
+      {
+        path: '/videos/{publicId}/stream',
+        method: 'get',
+        success: '302',
+        errors: ['401', '404', '409'],
+      },
+      {
+        path: '/videos/{publicId}/download',
+        method: 'get',
+        success: '302',
+        errors: ['401', '404', '409'],
+      },
+    ];
+
+    function operation(path: string, method: string): Operation {
+      const paths = document.paths as Record<string, Record<string, Operation>>;
+      return paths[path]?.[method];
+    }
+
+    it.each(VIDEO_OPERATIONS)(
+      'documents $method $path under the videos tag with access-token',
+      ({ path, method, success }) => {
+        const op = operation(path, method);
+
+        expect(op).toBeDefined();
+        expect(op.tags).toContain('videos');
+        expect(op.security?.some((req) => 'access-token' in req)).toBe(true);
+        expect(op.responses[success]).toBeDefined();
+      },
+    );
+
+    it.each(VIDEO_OPERATIONS)(
+      'documents the error responses of $method $path with ApiErrorEnvelope',
+      ({ path, method, errors }) => {
+        const op = operation(path, method);
+
+        for (const status of errors) {
+          expect(JSON.stringify(op.responses[status]?.content)).toContain(
+            ERROR_REF,
+          );
+        }
+      },
+    );
+
+    it.each(['/videos/{publicId}/stream', '/videos/{publicId}/download'])(
+      'documents the Location header on the 302 of %s',
+      (path) => {
+        expect(operation(path, 'get').responses['302'].headers).toHaveProperty(
+          'Location',
+        );
+      },
+    );
+  });
 });
