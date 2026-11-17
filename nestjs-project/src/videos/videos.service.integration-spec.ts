@@ -132,4 +132,30 @@ describe('VideosService (integration)', () => {
     insert.mockRestore();
     createUpload.mockRestore();
   });
+
+  it('should return part URLs that accept the PUT of a part and answer with an ETag', async () => {
+    const created = await videosService.initiateUpload(user.id, {
+      filename: 'aula.mp4',
+      size: 5000000,
+      content_type: 'video/mp4',
+    });
+
+    const result = await videosService.requestPartUrls(
+      user.id,
+      created.public_id,
+      { part_numbers: [1] },
+    );
+    const response = await fetch(result.parts[0].url, {
+      method: 'PUT',
+      body: new Uint8Array(1024),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('etag')).toBeTruthy();
+
+    const video = await dataSource
+      .getRepository(Video)
+      .findOneByOrFail({ public_id: created.public_id });
+    await storageService.abortVideoUpload(video.id, video.upload_id ?? '');
+  });
 });

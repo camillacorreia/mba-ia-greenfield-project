@@ -11,3 +11,6 @@ export type AllowedVideoContentType =
   (typeof ALLOWED_VIDEO_CONTENT_TYPES)[number];
 
 export const PUBLIC_ID_MAX_RETRIES = 5;
+
+/** Validade das URLs de UploadPart: 1h, re-solicitáveis enquanto o vídeo está em draft (TD-02). */
+export const PART_URL_EXPIRES_IN_SECONDS = 3600;

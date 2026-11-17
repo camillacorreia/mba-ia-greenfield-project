@@ -6,17 +6,23 @@ import { ChannelsService } from '../channels/channels.service';
 import { isPgUniqueViolationOnColumn } from '../common/database/pg-errors';
 import {
   ChannelNotFoundException,
+  InvalidPartNumberException,
   UnsupportedVideoFormatException,
+  VideoNotDraftException,
+  VideoNotFoundException,
   VideoTooLargeException,
 } from '../common/exceptions/domain.exception';
 import { StorageService } from '../storage/storage.service';
 import type { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
+import type { PartUrlsResponseDto } from './dto/part-urls-response.dto';
+import type { RequestPartUrlsDto } from './dto/request-part-urls.dto';
 import { Video, VideoStatus } from './entities/video.entity';
-import { generatePublicId } from './public-id.util';
+import { generatePublicId, isValidPublicId } from './public-id.util';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
   MAX_VIDEO_SIZE_BYTES,
+  PART_URL_EXPIRES_IN_SECONDS,
   PUBLIC_ID_MAX_RETRIES,
   UPLOAD_PART_SIZE_BYTES,
 } from './videos.constants';
@@ -77,8 +83,59 @@ export class VideosService {
       public_id: video.public_id,
       status: video.status,
       part_size: UPLOAD_PART_SIZE_BYTES,
-      part_count: Math.ceil(dto.size / UPLOAD_PART_SIZE_BYTES),
+      part_count: partCountFor(dto.size),
     };
+  }
+
+  /**
+   * Owner check comum às rotas `/videos/:publicId`. `publicId` malformado,
+   * inexistente ou de outro canal respondem igual, para não revelar que um
+   * `public_id` existe.
+   */
+  async findOwnedVideo(userId: string, publicId: string): Promise<Video> {
+    if (!isValidPublicId(publicId)) {
+      throw new VideoNotFoundException();
+    }
+    const video = await this.videoRepository.findOneBy({
+      public_id: publicId,
+    });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel || channel.id !== video.channel_id) {
+      throw new VideoNotFoundException();
+    }
+    return video;
+  }
+
+  async requestPartUrls(
+    userId: string,
+    publicId: string,
+    dto: RequestPartUrlsDto,
+  ): Promise<PartUrlsResponseDto> {
+    const video = await this.findOwnedVideo(userId, publicId);
+    if (video.status !== VideoStatus.DRAFT || !video.upload_id) {
+      throw new VideoNotDraftException();
+    }
+    const partCount = partCountFor(video.size_bytes);
+    if (dto.part_numbers.some((partNumber) => partNumber > partCount)) {
+      throw new InvalidPartNumberException();
+    }
+
+    const uploadId = video.upload_id;
+    const parts = await Promise.all(
+      dto.part_numbers.map(async (partNumber) => ({
+        part_number: partNumber,
+        url: await this.storageService.presignUploadPart(
+          video.id,
+          uploadId,
+          partNumber,
+          PART_URL_EXPIRES_IN_SECONDS,
+        ),
+      })),
+    );
+    return { parts, expires_in: PART_URL_EXPIRES_IN_SECONDS };
   }
 
   private async insertDraft(fields: Partial<Video>): Promise<Video> {
@@ -111,6 +168,10 @@ export class VideosService {
       );
     }
   }
+}
+
+function partCountFor(sizeBytes: number): number {
+  return Math.ceil(sizeBytes / UPLOAD_PART_SIZE_BYTES);
 }
 
 function isAllowedContentType(value: string): boolean {

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/17 completed
+**SIs:** 8/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -71,9 +71,14 @@
   - O lint acusou acessos `any` nos mocks do unit e do integration; corrigido tipando `jest.fn<Promise<unknown>, [Video]>()` e o `uploadId` do spy.
 
 ### SI-03.8 — Endpoint POST /videos/:publicId/upload/part-urls (URLs de envio das partes)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 17 novos passing (11 no unit `videos.service.spec.ts`, 1 no `videos.service.integration-spec.ts`, 5 em `test/videos-upload-part-urls.e2e-spec.ts`); suíte completa verde (unit 242/242, e2e 63/63 em duas rodadas seguidas, tsc e lint com exit 0)
+- **Observations:**
+  - **`--runInBand` no `test:e2e`:** na suíte completa, 6 testes e2e falharam (5 do `videos-initiate-upload` e 1 do `auth`), com login devolvendo 500 por `refresh_tokens violates foreign key constraint`. O log mostrava dois PIDs: o script era `jest --config ./test/jest-e2e.json`, sem `--runInBand`, então os arquivos rodavam em paralelo e um `cleanAllTables` apagava o usuário de outro arquivo no meio do login. O `nestjs-project/CLAUDE.md` já dizia que o e2e roda sempre com `--runInBand` e que o script "already configured", mas não estava. Até o SI-03.7 só o `auth.e2e-spec.ts` mexia no banco, por isso não aparecia. Corrigido no `package.json` (1 tentativa de fix).
+  - `findOwnedVideo` faz o owner check com `isValidPublicId` antes de consultar o banco. Vídeo inexistente, de outro canal ou usuário sem canal respondem o mesmo `VIDEO_NOT_FOUND`; o e2e confere que o corpo do 404 de outro canal é igual ao de `abc`.
+  - `requestPartUrls` também trata como `VIDEO_NOT_DRAFT` um rascunho sem `upload_id`, por defesa; pela regra do `markProcessing`, isso só acontece fora de `draft`.
+  - As URLs são assinadas em paralelo (`Promise.all`) e devolvidas na ordem pedida (coberto no unit com `[3, 1, 2]`).
+  - `PART_URL_EXPIRES_IN_SECONDS = 3600` entrou em `videos.constants.ts`, e o cálculo de `part_count` virou a função `partCountFor`, usada por `initiateUpload` e `requestPartUrls`.
 
 ### SI-03.9 — Endpoint POST /videos/:publicId/upload/complete (fechamento e enfileiramento)
 - **Status:** pending
