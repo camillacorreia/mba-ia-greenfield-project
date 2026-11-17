@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/17 completed
+**SIs:** 6/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -50,9 +50,13 @@
   - AC de bootstrap: o `dist/main.js` sobe, loga `BullModule dependencies initialized` e `GET /` responde 200. O `AppModule` ainda não importa o `VideoProcessingQueueModule` (isso entra com o `VideosService` nos próximos SIs), então nenhuma conexão com o Redis é aberta no boot por enquanto. A conexão real está coberta pelos testes do SI.
 
 ### SI-03.6 — Transições de status do vídeo e lookup do canal do usuário
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 19 novos passing (17 em `video-lifecycle.service.integration-spec.ts`, 2 em `channels.service.integration-spec.ts`); suíte completa verde (unit 215/215, e2e 52/52, tsc e lint com exit 0)
+- **Observations:**
+  - As transições ficam num único método privado `transition(id, fromStatuses, changes)`, que faz um `UPDATE ... WHERE id = :id AND status IN (...)` via query builder e devolve `affected > 0`. Com a lista de origem vazia, ele devolve `false` sem ir ao banco.
+  - O `findByUserId` usa `dataSource.getRepository(Channel)`, que é o estilo do `ChannelsService` existente (ele injeta `DataSource`, não repositório).
+  - O `findExpiredDrafts` ordena por `created_at` ascendente, o que não estava no plano. Fica determinístico e processa primeiro os rascunhos mais antigos.
+  - `VideoMetadata.audio_codec` é `string | null` (arquivo sem áudio), conforme o Data Model.
 
 ### SI-03.7 — Endpoint POST /videos (início do upload e rascunho)
 - **Status:** pending
