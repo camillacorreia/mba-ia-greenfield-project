@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/17 completed
+**SIs:** 10/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -91,9 +91,18 @@
   - Helper e2e: `VideosE2eContext.queue` passou a ser público (asserts de job); `reset()`/`close()` agora também apagam o objeto final `{id}` e a thumbnail `{id}.jpg` de cada vídeo nos buckets de teste; e entrou `createDraftWithUploadedPart(user, bytes, { declaredSize?, contentType? })`, que cria o rascunho, pede a URL da parte 1 e faz o PUT. O `tsc` exigiu `Uint8Array<ArrayBuffer>` no parâmetro, por causa do `BodyInit` do `fetch`.
 
 ### SI-03.10 — MediaInspector (ffprobe/ffmpeg) e política de formatos
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 31 passing (18 em `codec-policy.spec.ts`, 5 em `media-inspector.service.spec.ts`, 8 em `media-inspector.service.integration-spec.ts`); suíte completa verde (unit 283/283, e2e 68/68, tsc e lint com exit 0)
+- **Observations:**
+  - Fixtures geradas com o ffmpeg 5.1.9 do container a partir de `testsrc`/`sine`: `sample-h264-aac.mp4` (13 KB), `sample-vp9-opus.webm` (14 KB), `sample-mpeg4.mp4` (22 KB, sem áudio) e `not-a-video.mp4` (40 bytes de texto), todas com 1,5s e 320x240. Os comandos estão em `test/fixtures/media/README.md`.
+  - **Falha 1/3 corrigida:** o `probe` do `not-a-video.mp4` lançava `Error` em vez de `MediaUnreadableError`. O ffprobe sai com `code: 1, killed: false`, mas a checagem usava `instanceof Error`, e sob o Jest o erro do `child_process` vem de outro realm. Troquei por checagem estrutural de `code`/`killed`.
+  - Só saída diferente de zero do ffprobe vira `MediaUnreadableError` (permanente). Timeout ou kill sobem como erro comum, pra cair no retry do worker. JSON inválido do ffprobe também vira `MediaUnreadableError`.
+  - O `extractFrame` não traduz erro: falha do ffmpeg sobe como erro comum (transitório), porque um erro de leitura HTTP do storage também sai com código diferente de zero. Saída vazia também vira erro.
+  - Dimensão da thumbnail (a critério da implementação): largura máxima de 1280px mantendo a proporção (`scale='min(1280,iw)':-2`).
+  - `parseProbeOutput` é exportado para o unit; ignora stream de vídeo com `disposition.attached_pic` (capa embutida) e usa a duração do stream de vídeo quando o format não tem.
+  - Content type fora da allowlist na política devolve `UNSUPPORTED_CONTAINER` (na prática o `POST /videos` já barra com 415).
+  - O integration também passa o probe real das fixtures pela `checkPlayability`, que é como os ACs da política estão escritos.
+  - Pendente do SI-03.9: os testes do complete usam bytes aleatórios; agora que a fixture existe, dá pra trocar se a Camilla quiser.
 
 ### SI-03.11 — Processamento do vídeo no worker (job process-video)
 - **Status:** pending
