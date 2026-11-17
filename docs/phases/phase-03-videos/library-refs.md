@@ -9,7 +9,7 @@ libs:
     context7_id: "/nestjs/bull"
     fetched_at: "2026-11-17T13:21:07-03:00"
   ioredis:
-    version: "^6.0.0"
+    version: "^5"
     context7_id: "/taskforcesh/bullmq/v6.5.3"
     fetched_at: "2026-11-17T13:21:07-03:00"
   "@aws-sdk/client-s3":
@@ -34,7 +34,7 @@ Distilled docs for the libraries decided in this slice, pulled via Context7 and 
 |---------|--------|----------------------------|--------------------|
 | `bullmq` | `^6.7.7` | 6.7.7 | `engines.node >=14.18.0`, OK for Node 25 |
 | `@nestjs/bullmq` | `^12.0.2` | 12.0.2 | peer `@nestjs/common`/`@nestjs/core` `^10 \|\| ^11 \|\| ^12`, peer `bullmq` `^3 \|\| ^4 \|\| ^5 \|\| ^6`; OK for Nest 11 + BullMQ 6 |
-| `ioredis` | `^6.0.0` | 6.0.0 | `engines.node >=20.0.0`; satisfies BullMQ's optional peer `ioredis >=5.0.0` and is the version BullMQ 6.7.7 itself develops against |
+| `ioredis` | `^5` (installed 5.11.1) | 6.0.0 | `engines.node >=20.0.0`; satisfies BullMQ's optional peer `ioredis >=5.0.0` and TypeORM 0.3.28's optional peer `ioredis ^5.0.4`. **Revised 2026-11-17 (SI-03.1):** originally pinned `^6.0.0`, but `npm install` fails with ERESOLVE because `typeorm@0.3.28` declares `ioredis@^5.0.4` as an optional peer; `^5` resolves to a single deduped copy shared by BullMQ and TypeORM without `--legacy-peer-deps` |
 | `@aws-sdk/client-s3` | `^3.1170.0` | 3.1170.0 | `engines.node >=20.0.0` |
 | `@aws-sdk/s3-request-presigner` | `^3.1170.0` | 3.1170.0 | `engines.node >=20.0.0`; keep on the same version line as `client-s3` |
 
@@ -148,6 +148,8 @@ export class VideoProcessor extends WorkerHost {
 The `@Processor` class must be a provider of a module loaded only by the worker entrypoint (`video-worker` service); the API module registers the queue and producer only, so the API process never consumes jobs. `@OnWorkerEvent` listeners on request-scoped processors are skipped.
 
 ## ioredis
+
+**Version note (2026-11-17):** pinned to `^5` instead of `^6`, see the Version compatibility check table above (TypeORM 0.3.28 optional peer `^5.0.4`). The connection API used here is the same in 5.x.
 
 **Source:** covered by the BullMQ connection guide above (`/taskforcesh/bullmq/v6.5.3`). Installed only because BullMQ 6 needs it at runtime; application code does not import it unless a shared `IORedis` instance is created by hand (then `maxRetriesPerRequest: null` is mandatory for workers).
 
