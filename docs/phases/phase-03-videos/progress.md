@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/17 completed
+**SIs:** 5/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -41,9 +41,13 @@
   - O `StorageService` destrói os dois `S3Client` no `onModuleDestroy`.
 
 ### SI-03.5 — Fila video-processing e producer idempotente
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 6 passing (`video-processing.producer.integration-spec.ts`, `video-processing-queue.module.spec.ts`); suíte completa verde (unit 196/196, e2e 52/52, tsc e lint com exit 0)
+- **Observations:**
+  - **Desvio, `@nestjs/bullmq@^11.0.5` no lugar de `^12.0.2`:** a 12.x e a dependência `@nestjs/bull-shared@12` são publicadas só como ESM (`"type": "module"`, `exports.require` aponta para o mesmo `.js` ESM). O Node 25 carrega via `require(esm)`, então a app rodava. Mas o Jest (CommonJS) falhava com `SyntaxError: Unexpected token 'export'` em `node_modules/@nestjs/bullmq/dist/index.js`, quebrando os specs do SI e os 3 e2e, que importam o `AppModule`. A 11.0.5 (2026-08-07) é CommonJS e tem peer `bullmq ^3 || ^4 || ^5 || ^6` e Nest `^10 || ^11`. `npm ls` mostra `@nestjs/bullmq@11.0.5` e `@nestjs/bull-shared@11.0.5`, com `bullmq@6.7.7` deduplicado. O `library-refs.md` foi corrigido com nota datada no frontmatter, na tabela de versões e na seção do pacote; ele afirmava que só a 12.x aceitava BullMQ 6. Decisão da Camilla em 2026-11-17.
+  - No BullMQ 6 o `Queue` não expõe mais `client`, por causa dos backends plugáveis. O teste de prefixo usa `queue.toKey(videoId)` e um cliente `ioredis` próprio pra conferir que a chave existe sob `streamtube-test` e não sob `streamtube`.
+  - O teste limpa a fila com `queue.obliterate({ force: true })`, que só afeta o prefixo de teste.
+  - AC de bootstrap: o `dist/main.js` sobe, loga `BullModule dependencies initialized` e `GET /` responde 200. O `AppModule` ainda não importa o `VideoProcessingQueueModule` (isso entra com o `VideosService` nos próximos SIs), então nenhuma conexão com o Redis é aberta no boot por enquanto. A conexão real está coberta pelos testes do SI.
 
 ### SI-03.6 — Transições de status do vídeo e lookup do canal do usuário
 - **Status:** pending

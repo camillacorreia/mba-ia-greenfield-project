@@ -5,7 +5,7 @@ libs:
     context7_id: "/taskforcesh/bullmq/v6.5.3"
     fetched_at: "2026-11-17T13:21:07-03:00"
   "@nestjs/bullmq":
-    version: "^12.0.2"
+    version: "^11.0.5"
     context7_id: "/nestjs/bull"
     fetched_at: "2026-11-17T13:21:07-03:00"
   ioredis:
@@ -33,12 +33,12 @@ Distilled docs for the libraries decided in this slice, pulled via Context7 and 
 | Package | Pinned | Latest on npm (2026-11-17) | Constraint checked |
 |---------|--------|----------------------------|--------------------|
 | `bullmq` | `^6.7.7` | 6.7.7 | `engines.node >=14.18.0`, OK for Node 25 |
-| `@nestjs/bullmq` | `^12.0.2` | 12.0.2 | peer `@nestjs/common`/`@nestjs/core` `^10 \|\| ^11 \|\| ^12`, peer `bullmq` `^3 \|\| ^4 \|\| ^5 \|\| ^6`; OK for Nest 11 + BullMQ 6 |
+| `@nestjs/bullmq` | `^11.0.5` (installed 11.0.5) | 12.0.2 | peer `@nestjs/common`/`@nestjs/core` `^10 \|\| ^11`, peer `bullmq` `^3 \|\| ^4 \|\| ^5 \|\| ^6`; OK for Nest 11 + BullMQ 6, CommonJS. **Revised 2026-11-17 (SI-03.5):** originally pinned `^12.0.2`, but 12.x (and its dependency `@nestjs/bull-shared@12`) ships ESM only (`"type": "module"`); Node 25 loads it through `require(esm)`, but Jest (CommonJS) fails with `SyntaxError: Unexpected token 'export'`, breaking every spec that imports `AppModule` |
 | `ioredis` | `^5` (installed 5.11.1) | 6.0.0 | `engines.node >=20.0.0`; satisfies BullMQ's optional peer `ioredis >=5.0.0` and TypeORM 0.3.28's optional peer `ioredis ^5.0.4`. **Revised 2026-11-17 (SI-03.1):** originally pinned `^6.0.0`, but `npm install` fails with ERESOLVE because `typeorm@0.3.28` declares `ioredis@^5.0.4` as an optional peer; `^5` resolves to a single deduped copy shared by BullMQ and TypeORM without `--legacy-peer-deps` |
 | `@aws-sdk/client-s3` | `^3.1170.0` | 3.1170.0 | `engines.node >=20.0.0` |
 | `@aws-sdk/s3-request-presigner` | `^3.1170.0` | 3.1170.0 | `engines.node >=20.0.0`; keep on the same version line as `client-s3` |
 
-The `@nestjs/bullmq` major (12) is decoupled from the Nest major: the 12.x line is the one that adds BullMQ 6 to its peer range and still accepts Nest 11.
+The `@nestjs/bullmq` major is decoupled from the Nest major. BullMQ 6 entered the peer range in 11.0.5 (2026-08-07), not only in 12.x as first recorded here; 11.0.5 is the last CommonJS release, and 12.0.0 (2026-08-27) switched to ESM only. **Revised 2026-11-17 (SI-03.5).**
 
 ## Container images (Compose)
 
@@ -105,6 +105,8 @@ await queue.upsertJobScheduler(
 Other v6 breaking changes that matter here: `Queue.resume()` is async; `debounce` is gone in favor of deduplication (`deduplication: { id, ttl }`), which is a different mechanism from `jobId` dedupe and is not needed by TD-01.
 
 ## @nestjs/bullmq
+
+**Version note (2026-11-17):** pinned to `^11.0.5` instead of `^12.0.2`, see the Version compatibility check table above (12.x is ESM only and does not load under Jest). The APIs used in this phase (`forRootAsync`, `registerQueue`, `@InjectQueue`, `@Processor`, `WorkerHost`, `@OnWorkerEvent`) are the same in 11.0.5.
 
 **Source:** `/nestjs/bull` and the Nest 11 Queues technique (`/nestjs/docs.nestjs.com/__branch__11.0.0`). Maps to TD-01 and TD-04 (worker as `createApplicationContext`).
 
