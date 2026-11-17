@@ -202,7 +202,7 @@ Entregar no `nestjs-project/` o armazenamento de vídeos e thumbnails (MinIO/S3)
 ### SI-03.7 — Endpoint POST /videos (início do upload e rascunho)
 
 **Route:** POST /videos
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-initiate-upload.plan.md`
 **Authorization:** Authenticated; o rascunho é criado no canal do próprio usuário (`### Authorization Matrix`)
 
 **Description:** Pré-cadastra o vídeo como rascunho e abre o multipart upload no storage numa única chamada, devolvendo o `public_id` e o plano de partes para o cliente enviar os bytes direto ao storage.
@@ -241,7 +241,7 @@ Os cenários E2E (supertest) desta rota ficam no spec gerado por `/plan-test-spe
 ### SI-03.8 — Endpoint POST /videos/:publicId/upload/part-urls (URLs de envio das partes)
 
 **Route:** POST /videos/:publicId/upload/part-urls
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload-part-urls.plan.md`
 **Authorization:** Owner (canal do vídeo); outro canal recebe `404 VIDEO_NOT_FOUND` (`### Authorization Matrix`)
 
 **Description:** Emite as URLs pré-assinadas de `UploadPart` (1h, re-solicitáveis) para o dono de um rascunho, e introduz o owner check que as demais rotas `/videos/:publicId` reaproveitam.
@@ -279,7 +279,7 @@ Os cenários E2E (supertest) desta rota ficam no spec gerado por `/plan-test-spe
 ### SI-03.9 — Endpoint POST /videos/:publicId/upload/complete (fechamento e enfileiramento)
 
 **Route:** POST /videos/:publicId/upload/complete
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload-complete.plan.md`
 **Authorization:** Owner (canal do vídeo); outro canal recebe `404 VIDEO_NOT_FOUND` (`### Authorization Matrix`)
 
 **Description:** Fecha o multipart, confere o tamanho real contra o declarado e dispara o processamento assíncrono, seguindo a ordem enqueue idempotente antes da transição `draft → processing` fixada na TD-01.
@@ -445,7 +445,7 @@ Os cenários E2E (supertest) desta rota ficam no spec gerado por `/plan-test-spe
 ### SI-03.14 — Endpoint GET /videos/:publicId (estado do vídeo)
 
 **Route:** GET /videos/:publicId
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-get.plan.md`
 **Authorization:** Owner (canal do vídeo); outro canal recebe `404 VIDEO_NOT_FOUND` (`### Authorization Matrix`)
 
 **Description:** Expõe ao dono o estado e os metadados do vídeo, que é como o cliente acompanha o processamento até `ready` ou `failed`; o spec E2E desta rota cobre o fluxo completo upload → complete → processamento → `ready` com o processor do teste.
@@ -479,7 +479,7 @@ Os cenários E2E (supertest) desta rota, incluindo o fluxo completo até `ready`
 ### SI-03.15 — Endpoint GET /videos/:publicId/stream (reprodução por streaming)
 
 **Route:** GET /videos/:publicId/stream
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-stream.plan.md`
 **Authorization:** Owner (canal do vídeo), só com `status = ready`; outro canal recebe `404 VIDEO_NOT_FOUND` (`### Authorization Matrix`)
 
 **Description:** Redireciona o dono para uma URL pré-assinada do storage, que atende `Range` com `206`, entregando streaming progressivo sem que os bytes passem pela API.
@@ -513,7 +513,7 @@ Os cenários E2E (supertest) desta rota ficam no spec gerado por `/plan-test-spe
 ### SI-03.16 — Endpoint GET /videos/:publicId/download (download do vídeo)
 
 **Route:** GET /videos/:publicId/download
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-download.plan.md`
 **Authorization:** Owner (canal do vídeo), só com `status = ready`; outro canal recebe `404 VIDEO_NOT_FOUND` (`### Authorization Matrix`)
 
 **Description:** Igual ao stream, mas a URL pré-assinada força `Content-Disposition: attachment` com o nome original, para o navegador baixar o arquivo em vez de reproduzir.
