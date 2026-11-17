@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/17 completed
+**SIs:** 12/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -105,9 +105,16 @@
   - Pendente do SI-03.9: os testes do complete usam bytes aleatórios; agora que a fixture existe, dá pra trocar se a Camilla quiser.
 
 ### SI-03.11 — Processamento do vídeo no worker (job process-video)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 28 passing (14 em `video-processing.service.spec.ts`, 7 em `video.processor.spec.ts`, 7 em `video-processing.integration-spec.ts`); suíte completa verde (unit 316/316, e2e 73/73, tsc e lint com exit 0)
+- **Observations:**
+  - Conferido no código do BullMQ 6.7.7 instalado (`job.js`, `moveToFailed`): o evento `failed` do worker é emitido a cada tentativa, com `attemptsMade` já incrementado. O `onFailed` só marca `PROCESSING_FAILED` quando `attemptsMade >= opts.attempts` e o erro não tem `name === 'UnrecoverableError'`, que é a mesma checagem que o BullMQ usa em `shouldRetryJob`.
+  - Se a política devolve `ok` mas o probe vem sem vídeo ou sem duração (não deveria acontecer), o service trata como `INVALID_MEDIA` em vez de seguir com dados incompletos.
+  - Só a falha do `probe` com `MediaUnreadableError` vira permanente. Falha do `extractFrame`, do `putThumbnail` ou do banco sobe como transitória (unit cobre os três).
+  - O `onFailed` ignora jobs que não sejam `process-video`, pra não marcar vídeo por causa do `expire-drafts` (SI-03.12).
+  - `startTestProcessor()` usa `synchronize: false` no TypeORM: o banco de teste já está migrado, e o processor não deve alterar schema.
+  - Integration: o erro transitório é simulado com `jest.spyOn(inspector, 'probe')` no `MediaInspector` do próprio processor. As 3 tentativas levam ~3s por causa do backoff exponencial de 1s. O job duplicado usa outro `jobId`, porque o `jobId = videoId` original já existe na fila e seria ignorado pelo BullMQ.
+  - O `AppModule` não importa o `VideoProcessingModule` (conferido por grep); só o `start-test-processor.ts` importa por enquanto, e o entrypoint do worker vem no SI-03.13.
 
 ### SI-03.12 — Expiração de rascunhos abandonados (job expire-drafts)
 - **Status:** pending
