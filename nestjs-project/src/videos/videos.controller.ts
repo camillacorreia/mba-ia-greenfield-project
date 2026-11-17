@@ -25,6 +25,7 @@ import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import { RequestPartUrlsDto } from './dto/request-part-urls.dto';
+import { VideoResponseDto } from './dto/video-response.dto';
 import { VideosService } from './videos.service';
 
 const ERROR_SCHEMA = { $ref: getSchemaPath(ApiErrorEnvelope) };
@@ -256,5 +257,34 @@ export class VideosController {
     const url = await this.videosService.getDownloadUrl(user.sub, publicId);
     // Mesmo motivo do stream: 302 com corpo vazio, sem o texto do res.redirect().
     res.status(HttpStatus.FOUND).location(url).end();
+  }
+
+  @Get(':publicId')
+  @ApiOperation({
+    summary: 'Get a video',
+    description:
+      'Returns the status and metadata of a video owned by the authenticated user, in any status. Poll it after completing the upload to follow the processing until ready or failed.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video status and metadata',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Video does not exist or belongs to another channel (VIDEO_NOT_FOUND)',
+    schema: ERROR_SCHEMA,
+  })
+  async getVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.getVideo(user.sub, publicId);
   }
 }

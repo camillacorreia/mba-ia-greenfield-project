@@ -27,10 +27,12 @@ import type { InitiateUploadResponseDto } from './dto/initiate-upload-response.d
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
 import type { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import type { RequestPartUrlsDto } from './dto/request-part-urls.dto';
+import type { VideoResponseDto } from './dto/video-response.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { attachmentDisposition } from './content-disposition.util';
 import { generatePublicId, isValidPublicId } from './public-id.util';
 import { VideoLifecycleService } from './video-lifecycle.service';
+import { toVideoResponse } from './video-response.mapper';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
   MAX_VIDEO_SIZE_BYTES,
@@ -205,6 +207,14 @@ export class VideosService {
     await this.lifecycle.markProcessing(video.id);
 
     return { public_id: video.public_id, status: VideoStatus.PROCESSING };
+  }
+
+  /** Estado e metadados do vídeo para o dono, em qualquer status. */
+  async getVideo(userId: string, publicId: string): Promise<VideoResponseDto> {
+    const video = await this.findOwnedVideo(userId, publicId);
+    return toVideoResponse(video, (key) =>
+      this.storageService.thumbnailPublicUrl(key),
+    );
   }
 
   /**

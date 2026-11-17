@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 14/17 completed
+**SIs:** 15/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -133,9 +133,13 @@
 - **Observations:** none
 
 ### SI-03.14 — Endpoint GET /videos/:publicId (estado do vídeo)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 11 novos passing (6 em `video-response.mapper.spec.ts`, 5 em `test/videos-get.e2e-spec.ts`); suíte completa verde (unit 343/343, e2e 83/83, tsc e lint com exit 0)
+- **Observations:**
+  - O mapper lista os campos de saída explicitamente, então `id`, `channel_id`, `upload_id` e `thumbnail_key` nunca aparecem, mesmo se a entidade ganhar colunas. Também converte `size_bytes` com `Number()`, por defesa, além do transformer da entidade.
+  - O e2e sobe o processor do teste (`startTestProcessor()`) no `beforeAll` do arquivo inteiro, não só do cenário do fluxo completo, porque o spec pede um único `describe` por arquivo. Nos outros cenários ele fica ocioso.
+  - O fluxo completo usa a fixture `sample-h264-aac.mp4` via `SAMPLE_MP4` do helper e chega a `ready` em ~0,4s; o teste tem timeout de 45s e faz polling a cada 200ms com limite de 30s.
+  - O `thumbnail_url` é conferido contra `{S3_PUBLIC_ENDPOINT}/thumbnails-test/{uuid}.jpg`, e o GET anônimo nele responde 200.
 
 ### SI-03.15 — Endpoint GET /videos/:publicId/stream (reprodução por streaming)
 - **Status:** completed
