@@ -13,6 +13,7 @@ import {
 
 interface VideoBody {
   public_id: string;
+  title: string;
   status: string;
   failure_reason: string | null;
   original_filename: string;
@@ -78,6 +79,7 @@ describe('videos-get', () => {
     const body = res.body as VideoBody;
     expect(body).toMatchObject({
       public_id: publicId,
+      title: 'aula',
       status: 'draft',
       duration_seconds: null,
       thumbnail_url: null,
@@ -90,6 +92,26 @@ describe('videos-get', () => {
     expect(body).not.toHaveProperty('id');
     expect(body).not.toHaveProperty('channel_id');
     expect(body).not.toHaveProperty('upload_id');
+    expect(body).not.toHaveProperty('storage_key');
+  });
+
+  test('titulo-enviado-aparece-no-estado', async () => {
+    const created = await request(ctx.server())
+      .post('/videos')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({
+        title: 'Aula 1: introdução',
+        filename: 'aula.mp4',
+        size: 5000000,
+        content_type: 'video/mp4',
+      })
+      .expect(201);
+    const { public_id: publicId } = created.body as { public_id: string };
+
+    const res = await getVideo(publicId, owner.accessToken);
+
+    expect(res.status).toBe(200);
+    expect((res.body as VideoBody).title).toBe('Aula 1: introdução');
   });
 
   test('video-falho-expoe-failure-reason', async () => {

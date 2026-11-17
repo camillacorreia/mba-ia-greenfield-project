@@ -41,7 +41,7 @@ export class VideosController {
   @ApiOperation({
     summary: 'Start a video upload',
     description:
-      "Creates the video as a draft in the authenticated user's channel and opens a multipart upload in the storage. The client then requests signed part URLs and sends the bytes directly to the storage.",
+      "Creates the video as a draft in the authenticated user's channel and opens a multipart upload in the storage. The optional title (1 to 100 characters, trimmed) defaults to the file name without its extension. The client then requests signed part URLs and sends the bytes directly to the storage.",
   })
   @ApiResponse({
     status: 201,
@@ -263,7 +263,7 @@ export class VideosController {
   @ApiOperation({
     summary: 'Get a video',
     description:
-      'Returns the status and metadata of a video owned by the authenticated user, in any status. Poll it after completing the upload to follow the processing until ready or failed.',
+      'Returns the title, status and metadata of a video owned by the authenticated user, in any status. Poll it after completing the upload to follow the processing until ready or failed.',
   })
   @ApiResponse({
     status: 200,

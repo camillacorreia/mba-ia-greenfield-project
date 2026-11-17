@@ -57,6 +57,8 @@ describe('VideoLifecycleService (integration)', () => {
     return videoRepository.save(
       videoRepository.create({
         public_id: generatePublicId(),
+        title: 'clip',
+        storage_key: `stored/${generatePublicId()}`,
         channel_id: channel.id,
         original_filename: 'clip.mp4',
         content_type: 'video/mp4',

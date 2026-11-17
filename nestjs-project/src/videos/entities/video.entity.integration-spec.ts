@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DataSource, Repository } from 'typeorm';
 import { RefreshToken } from '../../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../../auth/entities/verification-token.entity';
@@ -54,8 +55,12 @@ describe('Video entity (integration)', () => {
   }
 
   function buildVideo(channelId: string, overrides: Partial<Video> = {}) {
+    const id = randomUUID();
     return videoRepository.create({
+      id,
       public_id: generatePublicId(),
+      title: 'holiday',
+      storage_key: id,
       channel_id: channelId,
       original_filename: 'holiday.mp4',
       content_type: 'video/mp4',
@@ -109,11 +114,32 @@ describe('Video entity (integration)', () => {
   it('should reject a video without channel_id', async () => {
     await expect(
       dataSource.query(
-        `INSERT INTO "videos" ("public_id", "original_filename", "content_type", "size_bytes")
-         VALUES ($1, 'a.mp4', 'video/mp4', 1)`,
+        `INSERT INTO "videos" ("public_id", "title", "storage_key", "original_filename", "content_type", "size_bytes")
+         VALUES ($1, 'a', 'a-key', 'a.mp4', 'video/mp4', 1)`,
         [generatePublicId()],
       ),
     ).rejects.toThrow(/null value in column "channel_id"/);
+  });
+
+  it.each(['title', 'storage_key'] as const)(
+    'should reject a video without %s',
+    async (column) => {
+      const { channel } = await createChannel();
+
+      await expect(
+        videoRepository.save(
+          buildVideo(channel.id, { [column]: null as unknown as string }),
+        ),
+      ).rejects.toThrow(new RegExp(`null value in column "${column}"`));
+    },
+  );
+
+  it('should reject a title longer than 100 characters', async () => {
+    const { channel } = await createChannel();
+
+    await expect(
+      videoRepository.save(buildVideo(channel.id, { title: 'a'.repeat(101) })),
+    ).rejects.toThrow(/value too long/);
   });
 
   it('should delete the videos when their channel is deleted', async () => {

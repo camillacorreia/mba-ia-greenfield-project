@@ -604,6 +604,15 @@ Os cenários E2E (supertest) desta rota ficam no spec gerado por `/plan-test-spe
 **Indexes:** `(public_id)` unique, `(channel_id)`, `(status, created_at)` para a varredura de rascunhos expirados.
 **Migration:** uma migration nova (`CreateVideos{timestamp}`) cria o enum `videos_status_enum`, a tabela `videos`, a FK e os três índices; o `down` remove na ordem inversa.
 
+**Revisão pós-implementação (2026-11-17):** o enunciado do desafio exige na tabela de vídeos, entre outros, título e as chaves de storage do arquivo e do thumbnail. Duas colunas novas, adicionadas pela migration `AddTitleAndStorageKeyToVideos1794938125601` (gerada pelo CLI, com `down`; a `CreateVideos` já executada não foi editada):
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| title | varchar(100) | not null | Título do vídeo. Vem do `title` opcional do `POST /videos`; sem ele, o nome do arquivo sem a extensão, truncado em 100. A edição do título continua na Fase 04 |
+| storage_key | varchar(255) | not null | Chave do arquivo original no bucket `S3_BUCKET_VIDEOS`. Gravada no início do upload com o mesmo valor de antes (o `id`, `phase-03-videos/TD-03`); storage, worker, stream, download e expiração passam a ler a chave desta coluna, ao lado do `thumbnail_key` |
+
+Para linhas já existentes, a migration preenche `title` a partir de `original_filename` (mesma regra do default) e `storage_key` a partir do `id` antes de aplicar o `NOT NULL`.
+
 #### Storage layout (MinIO/S3)
 
 | Bucket (env) | Acesso | Chave do objeto | Conteúdo |
@@ -620,6 +629,8 @@ Todas as rotas abaixo exigem `Authorization: Bearer <access_token>` (guard globa
 #### POST /videos (SI-03.7)
 
 Inicia o upload: cria o rascunho e o multipart upload no storage (`phase-03-videos/TD-02`, `phase-03-videos/TD-09`).
+
+**Revisão pós-implementação (2026-11-17):** o body aceita `title`: string, opcional — sem espaços nas pontas (trim), 1 a 100 caracteres, validado no DTO (`400 VALIDATION_ERROR` se vazio depois do trim ou acima de 100). Quando ausente, o rascunho recebe o nome do arquivo sem a extensão, truncado em 100. O rascunho também passa a gravar `storage_key` (o `id`, como antes). A resposta `201` não muda.
 
 **Request headers:**
 - Authorization: Bearer `<access_token>`
@@ -697,6 +708,8 @@ Fecha o multipart, confere o tamanho e enfileira o processamento. Ordem fixa: `C
 #### GET /videos/:publicId (SI-03.14)
 
 Leitura do estado do vídeo pelo dono, usada para acompanhar o processamento (`phase-03-videos/TD-09`).
+
+**Revisão pós-implementação (2026-11-17):** a resposta `200` ganha `title: string`. O `storage_key` é interno e, como `id`, `channel_id` e `upload_id`, nunca é exposto.
 
 **Request headers:**
 - Authorization: Bearer `<access_token>`

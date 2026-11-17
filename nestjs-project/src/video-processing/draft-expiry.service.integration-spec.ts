@@ -73,12 +73,16 @@ describe('DraftExpiryService (integration)', () => {
     status = VideoStatus.DRAFT,
   ): Promise<Video> {
     const id = randomUUID();
-    const uploadId = await storage.createVideoUpload(id, 'video/mp4');
-    openUploads.push({ key: id, uploadId });
+    // Diferente do id de propósito: a expiração aborta pela chave persistida.
+    const storageKey = `stored/${id}`;
+    const uploadId = await storage.createVideoUpload(storageKey, 'video/mp4');
+    openUploads.push({ key: storageKey, uploadId });
     const video = await videoRepository.save(
       videoRepository.create({
         id,
         public_id: generatePublicId(),
+        title: 'abandoned',
+        storage_key: storageKey,
         channel_id: channel.id,
         status,
         original_filename: 'abandoned.mp4',
@@ -98,7 +102,7 @@ describe('DraftExpiryService (integration)', () => {
     return s3.send(
       new ListPartsCommand({
         Bucket: 'videos-test',
-        Key: video.id,
+        Key: video.storage_key,
         UploadId: video.upload_id ?? '',
       }),
     );
@@ -145,7 +149,7 @@ describe('DraftExpiryService (integration)', () => {
 
   it('should expire a draft whose multipart was already aborted by the storage', async () => {
     const old = await draftWithUpload(25 * HOUR_MS);
-    await storage.abortVideoUpload(old.id, old.upload_id ?? '');
+    await storage.abortVideoUpload(old.storage_key, old.upload_id ?? '');
 
     await expect(service.expireDrafts()).resolves.toBe(1);
 

@@ -76,16 +76,18 @@ describe('videos-initiate-upload', () => {
     expect(video).toMatchObject({
       status: VideoStatus.DRAFT,
       channel_id: channel.id,
+      title: 'aula',
       original_filename: 'aula.mp4',
       size_bytes: 5000000,
     });
+    expect(video.storage_key).toBe(video.id);
     expect(video.upload_id).not.toBeNull();
 
     const s3 = ctx.app.get<S3Client>(S3_INTERNAL_CLIENT);
     const parts = await s3.send(
       new ListPartsCommand({
         Bucket: 'videos-test',
-        Key: video.id,
+        Key: video.storage_key,
         UploadId: video.upload_id ?? '',
       }),
     );
@@ -100,6 +102,38 @@ describe('videos-initiate-upload', () => {
 
     expect(res.status).toBe(201);
     expect((res.body as InitiateUploadBody).part_count).toBe(103);
+  });
+
+  // Revisão pós-implementação (2026-11-17): título do vídeo
+
+  test('titulo-enviado-e-gravado-sem-espacos-nas-pontas', async () => {
+    const res = await postVideos(
+      { ...VALID_BODY, title: '  Aula 1: introdução  ' },
+      userA.accessToken,
+    );
+
+    expect(res.status).toBe(201);
+    const video = await ctx.dataSource.getRepository(Video).findOneByOrFail({
+      public_id: (res.body as InitiateUploadBody).public_id,
+    });
+    expect(video.title).toBe('Aula 1: introdução');
+  });
+
+  test('titulo-invalido-retorna-400', async () => {
+    const blank = await postVideos(
+      { ...VALID_BODY, title: '   ' },
+      userA.accessToken,
+    );
+    const tooLong = await postVideos(
+      { ...VALID_BODY, title: 'a'.repeat(101) },
+      userA.accessToken,
+    );
+
+    expect(blank.status).toBe(400);
+    expect((blank.body as ApiErrorEnvelope).error).toBe('VALIDATION_ERROR');
+    expect(tooLong.status).toBe(400);
+    expect((tooLong.body as ApiErrorEnvelope).error).toBe('VALIDATION_ERROR');
+    await expect(videoCount()).resolves.toBe(0);
   });
 
   // 2. Rejeições de domínio, validação e autenticação

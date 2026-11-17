@@ -33,6 +33,9 @@ export class Video {
   @Column({ type: 'varchar', length: 11, unique: true })
   public_id: string;
 
+  @Column({ type: 'varchar', length: 100 })
+  title: string;
+
   @Index()
   @Column({ type: 'uuid' })
   channel_id: string;
@@ -51,6 +54,10 @@ export class Video {
 
   @Column({ type: 'bigint', transformer: bigintToNumber })
   size_bytes: number;
+
+  /** Chave do arquivo original no bucket de vídeos (hoje igual ao `id`, TD-03). */
+  @Column({ type: 'varchar', length: 255 })
+  storage_key: string;
 
   @Column({ type: 'text', nullable: true })
   upload_id: string | null;

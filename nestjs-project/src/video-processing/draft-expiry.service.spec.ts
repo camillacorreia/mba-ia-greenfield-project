@@ -7,7 +7,13 @@ import { DraftExpiryService } from './draft-expiry.service';
 const NOW = new Date('2026-11-17T12:00:00Z');
 
 function draft(id: string, uploadId: string | null = `upload-${id}`): Video {
-  return { id, status: VideoStatus.DRAFT, upload_id: uploadId } as Video;
+  return {
+    id,
+    // Diferente do id de propósito: o abort usa a chave persistida.
+    storage_key: `stored/${id}`,
+    status: VideoStatus.DRAFT,
+    upload_id: uploadId,
+  } as Video;
 }
 
 describe('DraftExpiryService', () => {
@@ -43,7 +49,10 @@ describe('DraftExpiryService', () => {
     lifecycle.findExpiredDrafts.mockResolvedValue([draft('a')]);
 
     await expect(service.expireDrafts(NOW)).resolves.toBe(1);
-    expect(storage.abortVideoUpload).toHaveBeenCalledWith('a', 'upload-a');
+    expect(storage.abortVideoUpload).toHaveBeenCalledWith(
+      'stored/a',
+      'upload-a',
+    );
     expect(lifecycle.markFailed).toHaveBeenCalledWith('a', 'UPLOAD_EXPIRED', [
       VideoStatus.DRAFT,
     ]);
@@ -71,7 +80,7 @@ describe('DraftExpiryService', () => {
       draft('c'),
     ]);
     storage.abortVideoUpload.mockImplementation((key: string) =>
-      key === 'b'
+      key === 'stored/b'
         ? Promise.reject(new Error('storage down'))
         : Promise.resolve(true),
     );

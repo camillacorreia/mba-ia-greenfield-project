@@ -32,6 +32,7 @@ import { Video, VideoStatus } from './entities/video.entity';
 import { attachmentDisposition } from './content-disposition.util';
 import { generatePublicId, isValidPublicId } from './public-id.util';
 import { VideoLifecycleService } from './video-lifecycle.service';
+import { defaultTitleFromFilename } from './video-title.util';
 import { toVideoResponse } from './video-response.mapper';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
@@ -74,8 +75,11 @@ export class VideosService {
     }
 
     const id = randomUUID();
+    // A chave do original continua sendo o id (TD-03), agora persistida em
+    // `storage_key` para que storage, worker e leituras não a derivem.
+    const storageKey = id;
     const uploadId = await this.storageService.createVideoUpload(
-      id,
+      storageKey,
       dto.content_type,
     );
 
@@ -83,6 +87,8 @@ export class VideosService {
     try {
       video = await this.insertDraft({
         id,
+        title: dto.title ?? defaultTitleFromFilename(dto.filename),
+        storage_key: storageKey,
         channel_id: channel.id,
         status: VideoStatus.DRAFT,
         original_filename: dto.filename,
@@ -92,7 +98,7 @@ export class VideosService {
       });
     } catch (error) {
       // Compensação: sem a linha do rascunho, ninguém mais abortaria esse multipart.
-      await this.abortQuietly(id, uploadId);
+      await this.abortQuietly(storageKey, uploadId);
       throw error;
     }
 
@@ -145,7 +151,7 @@ export class VideosService {
       dto.part_numbers.map(async (partNumber) => ({
         part_number: partNumber,
         url: await this.storageService.presignUploadPart(
-          video.id,
+          video.storage_key,
           uploadId,
           partNumber,
           PART_URL_EXPIRES_IN_SECONDS,
@@ -176,7 +182,7 @@ export class VideosService {
       .map((part) => ({ partNumber: part.part_number, etag: part.etag }));
     try {
       await this.storageService.completeVideoUpload(
-        video.id,
+        video.storage_key,
         video.upload_id,
         parts,
       );
@@ -191,7 +197,7 @@ export class VideosService {
       }
     }
 
-    const objectSize = await this.storageService.headVideo(video.id);
+    const objectSize = await this.storageService.headVideo(video.storage_key);
     if (objectSize === null) {
       throw new InvalidUploadPartsException();
     }
@@ -223,7 +229,7 @@ export class VideosService {
    */
   async getStreamUrl(userId: string, publicId: string): Promise<string> {
     const video = await this.findReadyOwnedVideo(userId, publicId);
-    return this.storageService.presignVideoGet(video.id, {
+    return this.storageService.presignVideoGet(video.storage_key, {
       signer: 'public',
       expiresIn: READ_URL_EXPIRES_IN_SECONDS,
       responseContentType: video.content_type,
@@ -233,7 +239,7 @@ export class VideosService {
   /** Igual ao stream, mas força o download com o nome original (TD-07). */
   async getDownloadUrl(userId: string, publicId: string): Promise<string> {
     const video = await this.findReadyOwnedVideo(userId, publicId);
-    return this.storageService.presignVideoGet(video.id, {
+    return this.storageService.presignVideoGet(video.storage_key, {
       signer: 'public',
       expiresIn: READ_URL_EXPIRES_IN_SECONDS,
       responseContentType: video.content_type,

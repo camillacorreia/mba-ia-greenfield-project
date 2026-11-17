@@ -170,7 +170,7 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 ### Modules
 
-- `VideosModule` (`src/videos/`) — `Video` entity, `VideosController` (all `/videos` routes), `VideosService` (upload, owner check, read URLs) and `VideoLifecycleService` (guarded status transitions, exported).
+- `VideosModule` (`src/videos/`) — `Video` entity, `VideosController` (all `/videos` routes), `VideosService` (upload, owner check, read URLs) and `VideoLifecycleService` (guarded status transitions, exported). The `videos` table stores, among others, `title`, `status`, `storage_key` (key of the original in the videos bucket), `thumbnail_key`, duration and media metadata, and the unique `public_id`.
 - `StorageModule` (`src/storage/`) — the only place that imports the AWS SDK. Two clients: `S3_INTERNAL_CLIENT` on `S3_ENDPOINT` (server-side calls and URLs read inside Compose) and `S3_PUBLIC_SIGNER` on `S3_PUBLIC_ENDPOINT` (URLs handed to clients). `StorageService` translates SDK errors into `StorageNoSuchUploadError` / `StorageInvalidPartsError`.
 - `VideoProcessingQueueModule` (`src/video-processing/`) — registers the BullMQ queue `video-processing` and `VideoProcessingProducer` (`jobId = video id`, 3 attempts, exponential backoff). Imported by the API; it has no consumer.
 - `VideoProcessingModule` — the consumer: `VideoProcessor` (`process-video` and `expire-drafts`), `VideoProcessingService` (ffprobe, codec policy, thumbnail), `MediaInspector` (`execFile` on `ffprobe`/`ffmpeg`), `DraftExpiryService` and `DraftExpiryScheduler` (Job Scheduler `expire-draft-uploads`, every 1h). **Never import it in `AppModule`.**
@@ -178,11 +178,11 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 ### Upload flow
 
-1. `POST /videos` validates size (≤ 10 GiB) and type (`video/mp4`, `video/webm`), opens the multipart upload at key `{id}` and stores the draft with an 11-char `public_id`. Returns `part_size` (100 MiB) and `part_count`.
+1. `POST /videos` validates size (≤ 10 GiB) and type (`video/mp4`, `video/webm`), opens the multipart upload and stores the draft with an 11-char `public_id`, the optional `title` (1..100 chars, trimmed; defaults to the file name without extension, see `defaultTitleFromFilename`) and `storage_key`. The key is the video `id` (TD-03), persisted so storage calls, the worker, stream and download read it from the column instead of deriving it. Returns `part_size` (100 MiB) and `part_count`.
 2. `POST /videos/:publicId/upload/part-urls` signs `UploadPart` URLs (1h). The client `PUT`s each part straight to the storage and keeps the `ETag`.
 3. `POST /videos/:publicId/upload/complete` completes the multipart, checks `HeadObject` size against the declared size, enqueues `process-video` and only then moves the video to `processing` (202).
-4. The worker probes the file through an internal signed URL, checks container and codecs, writes the thumbnail `{id}.jpg` to the public thumbnails bucket and marks the video `ready`.
-5. `GET /videos/:publicId` returns status and metadata; `GET /videos/:publicId/stream` and `/download` redirect (302, empty body) to signed `GetObject` URLs (1h). The storage answers `Range` with 206, so bytes never go through the API.
+4. The worker probes the file (at its `storage_key`) through an internal signed URL, checks container and codecs, writes the thumbnail `{id}.jpg` to the public thumbnails bucket and marks the video `ready`.
+5. `GET /videos/:publicId` returns title, status and metadata (never `id`, `channel_id`, `upload_id` nor `storage_key`); `GET /videos/:publicId/stream` and `/download` redirect (302, empty body) to signed `GetObject` URLs (1h). The storage answers `Range` with 206, so bytes never go through the API.
 
 Every `/videos/:publicId` route is owner-only: another channel's video answers exactly like a missing one (`404 VIDEO_NOT_FOUND`).
 

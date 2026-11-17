@@ -3,7 +3,7 @@ import type { Video } from './entities/video.entity';
 
 /**
  * Formato público do vídeo. Lista os campos explicitamente para que `id`,
- * `channel_id` e `upload_id` nunca vazem, mesmo se a entidade ganhar colunas.
+ * `channel_id`, `upload_id` e `storage_key` nunca vazem, mesmo se a entidade ganhar colunas.
  */
 export function toVideoResponse(
   video: Video,
@@ -11,6 +11,7 @@ export function toVideoResponse(
 ): VideoResponseDto {
   return {
     public_id: video.public_id,
+    title: video.title,
     status: video.status,
     failure_reason: video.failure_reason,
     original_filename: video.original_filename,

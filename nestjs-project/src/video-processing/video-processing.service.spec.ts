@@ -11,6 +11,8 @@ import {
 import { VideoProcessingService } from './video-processing.service';
 
 const VIDEO_ID = 'video-1';
+// Diferente do id de propósito: o worker lê o original pela coluna storage_key.
+const STORAGE_KEY = 'stored/original-1';
 const URL = 'http://minio:9000/videos/video-1?signed';
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 
@@ -24,6 +26,7 @@ const MP4_PROBE: ProbeResult = {
 function video(overrides: Partial<Video> = {}): Video {
   return {
     id: VIDEO_ID,
+    storage_key: STORAGE_KEY,
     status: VideoStatus.PROCESSING,
     content_type: 'video/mp4',
     ...overrides,
@@ -81,10 +84,10 @@ describe('VideoProcessingService', () => {
     expect(storage.presignVideoGet).not.toHaveBeenCalled();
   });
 
-  it('should read through an internal signed URL valid for 900s', async () => {
+  it('should read the original through an internal signed URL of its storage_key, valid for 900s', async () => {
     await service.process(VIDEO_ID);
 
-    expect(storage.presignVideoGet).toHaveBeenCalledWith(VIDEO_ID, {
+    expect(storage.presignVideoGet).toHaveBeenCalledWith(STORAGE_KEY, {
       signer: 'internal',
       expiresIn: 900,
     });

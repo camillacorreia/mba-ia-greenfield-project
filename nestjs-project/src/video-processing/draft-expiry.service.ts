@@ -30,7 +30,10 @@ export class DraftExpiryService {
       try {
         if (draft.upload_id) {
           // `false` quando o storage já abortou (regra de stale uploads): não é erro.
-          await this.storage.abortVideoUpload(draft.id, draft.upload_id);
+          await this.storage.abortVideoUpload(
+            draft.storage_key,
+            draft.upload_id,
+          );
         }
         const changed = await this.lifecycle.markFailed(
           draft.id,

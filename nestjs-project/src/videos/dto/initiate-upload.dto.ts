@@ -1,6 +1,27 @@
-import { IsInt, IsNotEmpty, IsString, Length, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+} from 'class-validator';
 
 export class InitiateUploadDto {
+  /**
+   * Título do vídeo, sem espaços nas pontas (1..100 caracteres). Quando ausente,
+   * o rascunho usa o nome do arquivo sem a extensão. Editável na Fase 04.
+   * @example "Aula 1: introdução"
+   */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @Length(1, 100)
+  title?: string;
+
   /** Nome original do arquivo, usado no download. */
   @IsString()
   @Length(1, 255)

@@ -4,6 +4,9 @@ export class VideoResponseDto {
   /** @example "dQw4w9WgXcQ" */
   public_id: string;
 
+  /** @example "Aula 1: introdução" */
+  title: string;
+
   /** @example "ready" */
   status: VideoStatus;
 

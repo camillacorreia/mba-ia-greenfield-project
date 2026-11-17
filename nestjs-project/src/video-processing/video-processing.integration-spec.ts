@@ -85,6 +85,9 @@ describe('process-video pipeline (integration)', () => {
     const video = await videoRepository.save(
       videoRepository.create({
         public_id: generatePublicId(),
+        title: fixture,
+        // Diferente do id de propósito: o worker lê o original pela chave persistida.
+        storage_key: `stored/${randomUUID()}`,
         channel_id: channel.id,
         status: VideoStatus.PROCESSING,
         original_filename: fixture,
@@ -96,12 +99,12 @@ describe('process-video pipeline (integration)', () => {
     await s3.send(
       new PutObjectCommand({
         Bucket: 'videos-test',
-        Key: video.id,
+        Key: video.storage_key,
         Body: body,
       }),
     );
     createdKeys.push(
-      { Bucket: 'videos-test', Key: video.id },
+      { Bucket: 'videos-test', Key: video.storage_key },
       { Bucket: 'thumbnails-test', Key: `${video.id}.jpg` },
     );
     return video;
@@ -192,7 +195,9 @@ describe('process-video pipeline (integration)', () => {
     expect(processed.status).toBe(VideoStatus.FAILED);
     expect(processed.failure_reason).toBe('UNSUPPORTED_CODEC');
     expect(job.attemptsMade).toBe(1);
-    await expect(storage.headVideo(video.id)).resolves.toBeGreaterThan(0);
+    await expect(storage.headVideo(video.storage_key)).resolves.toBeGreaterThan(
+      0,
+    );
   });
 
   it('should fail a file that is not a video with INVALID_MEDIA after a single attempt', async () => {

@@ -8,6 +8,8 @@ function video(overrides: Partial<Video> = {}): Video {
   return {
     id: '6f1c1b7e-3f0a-4c55-9d4e-2b8f1a6c9e10',
     public_id: 'dQw4w9WgXcQ',
+    title: 'Aula 1',
+    storage_key: '6f1c1b7e-3f0a-4c55-9d4e-2b8f1a6c9e10',
     channel_id: 'f5b0f2a4-8d2e-4a7a-9e0b-1c2d3e4f5a6b',
     status: VideoStatus.DRAFT,
     failure_reason: null,
@@ -28,13 +30,18 @@ function video(overrides: Partial<Video> = {}): Video {
 }
 
 describe('toVideoResponse', () => {
-  it('should never expose id, channel_id nor upload_id', () => {
+  it('should never expose id, channel_id, upload_id nor storage_key', () => {
     const response = toVideoResponse(video(), thumbnailUrlFor);
 
     expect(response).not.toHaveProperty('id');
     expect(response).not.toHaveProperty('channel_id');
     expect(response).not.toHaveProperty('upload_id');
+    expect(response).not.toHaveProperty('storage_key');
     expect(response).not.toHaveProperty('thumbnail_key');
+  });
+
+  it('should expose the title', () => {
+    expect(toVideoResponse(video(), thumbnailUrlFor).title).toBe('Aula 1');
   });
 
   it('should return a null thumbnail_url without thumbnail_key', () => {

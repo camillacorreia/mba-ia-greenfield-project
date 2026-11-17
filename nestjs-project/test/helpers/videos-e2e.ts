@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -142,8 +143,12 @@ export class VideosE2eContext {
       .findOneByOrFail({ user_id: owner.id });
     const isReady = status === VideoStatus.READY;
     const repository = this.dataSource.getRepository(Video);
+    const id = randomUUID();
     const video = await repository.save(
       repository.create({
+        id,
+        title: 'Aula',
+        storage_key: id,
         public_id: generatePublicId(),
         channel_id: channel.id,
         status,
@@ -165,7 +170,7 @@ export class VideosE2eContext {
       await this.app.get<S3Client>(S3_INTERNAL_CLIENT).send(
         new PutObjectCommand({
           Bucket: storageConfig().bucketVideos,
-          Key: video.id,
+          Key: video.storage_key,
           Body: SAMPLE_MP4,
           ContentType: video.content_type,
         }),
@@ -217,10 +222,13 @@ export class VideosE2eContext {
     const videos = await this.dataSource.getRepository(Video).find();
     for (const video of videos) {
       if (video.upload_id) {
-        await storage.abortVideoUpload(video.id, video.upload_id);
+        await storage.abortVideoUpload(video.storage_key, video.upload_id);
       }
       await s3.send(
-        new DeleteObjectCommand({ Bucket: bucketVideos, Key: video.id }),
+        new DeleteObjectCommand({
+          Bucket: bucketVideos,
+          Key: video.storage_key,
+        }),
       );
       await s3.send(
         new DeleteObjectCommand({

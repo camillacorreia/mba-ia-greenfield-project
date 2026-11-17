@@ -39,7 +39,7 @@ export class VideoProcessingService {
       return;
     }
 
-    const url = await this.storage.presignVideoGet(video.id, {
+    const url = await this.storage.presignVideoGet(video.storage_key, {
       signer: 'internal',
       expiresIn: PROCESSING_READ_URL_EXPIRES_IN_SECONDS,
     });

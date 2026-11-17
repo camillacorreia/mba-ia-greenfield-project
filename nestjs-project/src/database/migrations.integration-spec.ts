@@ -7,6 +7,7 @@ import { Video } from '../videos/entities/video.entity';
 import { CreateUsersAndChannels1775687773260 } from './migrations/1775687773260-CreateUsersAndChannels';
 import { CreateAuthTokens1777579850478 } from './migrations/1777579850478-CreateAuthTokens';
 import { CreateVideos1794934411093 } from './migrations/1794934411093-CreateVideos';
+import { AddTitleAndStorageKeyToVideos1794938125601 } from './migrations/1794938125601-AddTitleAndStorageKeyToVideos';
 import { createTestDataSource } from '../test/create-test-data-source';
 
 const MANAGED_TABLES = [
@@ -38,6 +39,7 @@ describe('Database migrations (integration)', () => {
           CreateUsersAndChannels1775687773260,
           CreateAuthTokens1777579850478,
           CreateVideos1794934411093,
+          AddTitleAndStorageKeyToVideos1794938125601,
         ],
       },
     );
@@ -66,7 +68,7 @@ describe('Database migrations (integration)', () => {
   it('should apply all migrations and create all managed tables', async () => {
     const ranMigrations = await dataSource.runMigrations();
 
-    expect(ranMigrations).toHaveLength(3);
+    expect(ranMigrations).toHaveLength(4);
 
     const result = await dataSource.query<{ table_name: string }[]>(
       `SELECT table_name FROM information_schema.tables
@@ -96,6 +98,82 @@ describe('Database migrations (integration)', () => {
       'ready',
       'failed',
     ]);
+  });
+
+  async function videoColumns(): Promise<
+    { column_name: string; is_nullable: string }[]
+  > {
+    return dataSource.query(
+      `SELECT column_name, is_nullable FROM information_schema.columns
+       WHERE table_name = 'videos' AND column_name IN ('title', 'storage_key')
+       ORDER BY column_name`,
+    );
+  }
+
+  it('should add title and storage_key as NOT NULL columns', async () => {
+    await expect(videoColumns()).resolves.toEqual([
+      { column_name: 'storage_key', is_nullable: 'NO' },
+      { column_name: 'title', is_nullable: 'NO' },
+    ]);
+  });
+
+  it('should revert AddTitleAndStorageKeyToVideos and remove both columns', async () => {
+    await dataSource.undoLastMigration();
+
+    await expect(videoColumns()).resolves.toEqual([]);
+  });
+
+  it('should backfill title and storage_key for videos created before the migration', async () => {
+    const [user] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO "users" ("email", "password") VALUES ('legacy-videos@example.com', 'x') RETURNING "id"`,
+    );
+    const [channel] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO "channels" ("name", "nickname", "user_id") VALUES ('legacy', 'legacy-videos', $1) RETURNING "id"`,
+      [user.id],
+    );
+    const longName = `${'a'.repeat(150)}.mp4`;
+    for (const [publicId, filename] of [
+      ['legacy00001', 'aula.mp4'],
+      ['legacy00002', '.mp4'],
+      ['legacy00003', longName],
+    ]) {
+      await dataSource.query(
+        `INSERT INTO "videos" ("public_id", "channel_id", "original_filename", "content_type", "size_bytes")
+         VALUES ($1, $2, $3, 'video/mp4', 1)`,
+        [publicId, channel.id, filename],
+      );
+    }
+
+    const ran = await dataSource.runMigrations();
+    const rows = await dataSource.query<
+      { public_id: string; title: string; key_matches_id: boolean }[]
+    >(
+      `SELECT "public_id", "title", "storage_key" = "id"::text AS key_matches_id
+       FROM "videos" WHERE "channel_id" = $1 ORDER BY "public_id"`,
+      [channel.id],
+    );
+
+    expect(ran.map((migration) => migration.name)).toEqual([
+      'AddTitleAndStorageKeyToVideos1794938125601',
+    ]);
+    expect(rows).toEqual([
+      { public_id: 'legacy00001', title: 'aula', key_matches_id: true },
+      { public_id: 'legacy00002', title: '.mp4', key_matches_id: true },
+      {
+        public_id: 'legacy00003',
+        title: 'a'.repeat(100),
+        key_matches_id: true,
+      },
+    ]);
+
+    await dataSource.query('DELETE FROM "videos" WHERE "channel_id" = $1', [
+      channel.id,
+    ]);
+    await dataSource.query('DELETE FROM "channels" WHERE "id" = $1', [
+      channel.id,
+    ]);
+    await dataSource.query('DELETE FROM "users" WHERE "id" = $1', [user.id]);
+    await dataSource.undoLastMigration();
   });
 
   it('should revert CreateVideos and remove the videos table and its enum', async () => {

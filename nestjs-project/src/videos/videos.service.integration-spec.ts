@@ -94,22 +94,28 @@ describe('VideosService (integration)', () => {
     expect(video).toMatchObject({
       status: VideoStatus.DRAFT,
       channel_id: channel.id,
+      title: 'aula',
       original_filename: 'aula.mp4',
       content_type: 'video/mp4',
       size_bytes: 5000000,
     });
+    // A chave do original segue o id (TD-03), agora persistida na coluna.
+    expect(video.storage_key).toBe(video.id);
     expect(video.upload_id).toEqual(expect.any(String));
 
     const parts = await s3.send(
       new ListPartsCommand({
         Bucket: 'videos-test',
-        Key: video.id,
+        Key: video.storage_key,
         UploadId: video.upload_id ?? '',
       }),
     );
     expect(parts.$metadata.httpStatusCode).toBe(200);
 
-    await storageService.abortVideoUpload(video.id, video.upload_id ?? '');
+    await storageService.abortVideoUpload(
+      video.storage_key,
+      video.upload_id ?? '',
+    );
   });
 
   it('should not create a row nor touch the storage for a user without channel', async () => {
@@ -180,7 +186,10 @@ describe('VideosService (integration)', () => {
     const video = await dataSource
       .getRepository(Video)
       .findOneByOrFail({ public_id: created.public_id });
-    await storageService.abortVideoUpload(video.id, video.upload_id ?? '');
+    await storageService.abortVideoUpload(
+      video.storage_key,
+      video.upload_id ?? '',
+    );
   });
 
   it('should complete a real upload, leave the video processing and queue process-video', async () => {
@@ -215,7 +224,7 @@ describe('VideosService (integration)', () => {
     });
     expect(video.status).toBe(VideoStatus.PROCESSING);
     expect(video.upload_id).toBeNull();
-    await expect(storageService.headVideo(video.id)).resolves.toBe(
+    await expect(storageService.headVideo(video.storage_key)).resolves.toBe(
       bytes.length,
     );
     const job = await queue.getJob(video.id);
@@ -223,7 +232,10 @@ describe('VideosService (integration)', () => {
     expect(job?.data).toEqual({ videoId: video.id });
 
     await s3.send(
-      new DeleteObjectCommand({ Bucket: 'videos-test', Key: video.id }),
+      new DeleteObjectCommand({
+        Bucket: 'videos-test',
+        Key: video.storage_key,
+      }),
     );
   });
 });

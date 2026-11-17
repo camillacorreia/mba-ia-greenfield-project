@@ -133,12 +133,14 @@ Content-Type: {{contentType}}
 # ─────────────────────────────────────────────
 
 ### 10. Iniciar upload — cria o rascunho e abre o multipart (201, public_id capturado)
+# title é opcional (1..100); sem ele, o rascunho usa o nome do arquivo sem extensão
 # @name initiateUpload
 POST {{baseUrl}}/videos
 Authorization: Bearer {{accessToken}}
 Content-Type: {{contentType}}
 
 {
+  "title": "Aula 1: introdução",
   "filename": "sample-h264-aac.mp4",
   "size": 13403,
   "content_type": "video/mp4"
@@ -174,7 +176,7 @@ Content-Type: {{contentType}}
 }
 
 
-### 14. Estado do vídeo — repetir até sair de processing (200, ready com metadados e thumbnail_url)
+### 14. Estado do vídeo — repetir até sair de processing (200, title, ready com metadados e thumbnail_url)
 GET {{baseUrl}}/videos/{{publicId}}
 Authorization: Bearer {{accessToken}}
 

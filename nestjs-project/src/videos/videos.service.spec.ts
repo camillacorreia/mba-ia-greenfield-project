@@ -25,6 +25,8 @@ import { Video, VideoStatus } from './entities/video.entity';
 import { VideosService } from './videos.service';
 
 const USER_ID = 'user-1';
+// Diferente do id de propósito: prova que storage e leituras usam a coluna.
+const STORAGE_KEY = 'stored/original-1';
 const CHANNEL = { id: 'channel-1', user_id: USER_ID };
 
 function uniqueViolation(column: string): QueryFailedError {
@@ -147,12 +149,34 @@ describe('VideosService', () => {
       expect(contentType).toBe('video/mp4');
       expect(inserted).toMatchObject({
         id: key,
+        storage_key: key,
+        title: 'aula',
         channel_id: CHANNEL.id,
         status: VideoStatus.DRAFT,
         upload_id: 'upload-1',
         original_filename: 'aula.mp4',
         size_bytes: 5000000,
       });
+    });
+
+    it('should keep the title sent by the client', async () => {
+      await service.initiateUpload(
+        USER_ID,
+        dto({ title: 'Aula 1: introdução' }),
+      );
+
+      const inserted = videoRepository.insert.mock.calls[0][0];
+      expect(inserted.title).toBe('Aula 1: introdução');
+    });
+
+    it('should default the title to the file name without extension', async () => {
+      await service.initiateUpload(
+        USER_ID,
+        dto({ filename: 'minha.aula.final.webm', content_type: 'video/webm' }),
+      );
+
+      const inserted = videoRepository.insert.mock.calls[0][0];
+      expect(inserted.title).toBe('minha.aula.final');
     });
 
     it('should retry with a new public_id on a public_id unique violation', async () => {
@@ -304,10 +328,10 @@ describe('VideosService', () => {
       expect(result.expires_in).toBe(3600);
       expect(result.parts.map((part) => part.part_number)).toEqual([3, 1, 2]);
       expect(result.parts[0].url).toBe(
-        'http://storage/video-1?uploadId=upload-1&part=3',
+        `http://storage/${STORAGE_KEY}?uploadId=upload-1&part=3`,
       );
       expect(storageService.presignUploadPart).toHaveBeenCalledWith(
-        'video-1',
+        STORAGE_KEY,
         'upload-1',
         3,
         3600,
@@ -332,13 +356,14 @@ describe('VideosService', () => {
       });
 
       expect(storageService.completeVideoUpload).toHaveBeenCalledWith(
-        'video-1',
+        STORAGE_KEY,
         'upload-1',
         [
           { partNumber: 1, etag: '"etag-1"' },
           { partNumber: 2, etag: '"etag-2"' },
         ],
       );
+      expect(storageService.headVideo).toHaveBeenCalledWith(STORAGE_KEY);
       expect(processingProducer.enqueueProcessing).toHaveBeenCalledWith(
         'video-1',
       );
@@ -452,7 +477,7 @@ describe('VideosService', () => {
       await expect(service.getStreamUrl(USER_ID, PUBLIC_ID)).resolves.toBe(
         'http://signed',
       );
-      expect(storageService.presignVideoGet).toHaveBeenCalledWith('video-1', {
+      expect(storageService.presignVideoGet).toHaveBeenCalledWith(STORAGE_KEY, {
         signer: 'public',
         expiresIn: 3600,
         responseContentType: 'video/webm',
@@ -499,7 +524,7 @@ describe('VideosService', () => {
       await expect(service.getDownloadUrl(USER_ID, PUBLIC_ID)).resolves.toBe(
         'http://signed',
       );
-      expect(storageService.presignVideoGet).toHaveBeenCalledWith('video-1', {
+      expect(storageService.presignVideoGet).toHaveBeenCalledWith(STORAGE_KEY, {
         signer: 'public',
         expiresIn: 3600,
         responseContentType: 'video/mp4',
@@ -512,6 +537,8 @@ describe('VideosService', () => {
     return {
       id: 'video-1',
       public_id: 'AbCdEfGhIj_',
+      title: 'aula',
+      storage_key: STORAGE_KEY,
       channel_id: CHANNEL.id,
       status: VideoStatus.DRAFT,
       upload_id: 'upload-1',
