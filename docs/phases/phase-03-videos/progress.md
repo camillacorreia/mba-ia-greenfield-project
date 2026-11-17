@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/17 completed
+**SIs:** 2/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -13,9 +13,13 @@
   - Evidência dos ACs: `docker compose up -d` deixa redis/minio `healthy`, minio-init `Exited (0)` e nestjs-api `Up`. Segundo `docker compose up minio-init` também sai com 0. `redis-cli ping` responde `PONG`. `ffprobe`/`ffmpeg -version` saem com 0. GET anônimo dá 404 em `thumbnails/inexistente.jpg` e 403 em `videos/inexistente`. Política anônima: `download` em thumbnails, `private` em videos.
 
 ### SI-03.2 — Configuração de storage e fila, com ambiente isolado para testes
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16 passing (`src/config/env.validation.integration-spec.ts`); suíte completa verde (unit 156/156, e2e 52/52, tsc e lint com exit 0)
+- **Observations:**
+  - O `.env` local (gitignored, fora do diff) também recebeu o bloco S3/Redis do `.env.example`. Sem isso a validação Joi derruba a app e as suítes que sobem o `AppModule`.
+  - O spec ganhou um `describe` que confere `process.env` dentro do Jest (`QUEUE_PREFIX=streamtube-test`, buckets `-test` e `S3_PUBLIC_ENDPOINT` igual a `S3_ENDPOINT`), pra cobrir o AC de isolamento. O e2e passa pelo mesmo `setup-test-env.ts` (`<rootDir>/../src/test/setup-test-env.ts`).
+  - O `setup-test-env.ts` só iguala `S3_PUBLIC_ENDPOINT` a `S3_ENDPOINT` quando o `S3_ENDPOINT` existe, pra não gravar a string `undefined` se o `.env` faltar.
+  - ACs de bootstrap conferidos com `dist/main.js`: sem `S3_BUCKET_VIDEOS`, sai com exit 1 e `"S3_BUCKET_VIDEOS" is required`; com o `.env`, `GET /` responde 200. Pra testar sem a variável, precisei rodar com cwd fora do projeto, porque o `ConfigModule` lê `./.env` sozinho.
 
 ### SI-03.3 — Entidade Video, migration da tabela videos e geração do public_id
 - **Status:** pending
