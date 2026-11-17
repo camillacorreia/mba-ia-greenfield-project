@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/17 completed
+**SIs:** 3/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -22,9 +22,13 @@
   - ACs de bootstrap conferidos com `dist/main.js`: sem `S3_BUCKET_VIDEOS`, sai com exit 1 e `"S3_BUCKET_VIDEOS" is required`; com o `.env`, `GET /` responde 200. Pra testar sem a variável, precisei rodar com cwd fora do projeto, porque o `ConfigModule` lê `./.env` sozinho.
 
 ### SI-03.3 — Entidade Video, migration da tabela videos e geração do public_id
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 passing (`public-id.util.spec.ts`, `video.entity.integration-spec.ts`, `migrations.integration-spec.ts`); suíte completa verde (unit 176/176, e2e 52/52, tsc e lint com exit 0)
+- **Observations:**
+  - Migration gerada: `1794934411093-CreateVideos.ts`. O diff saiu só com `videos` (enum, tabela, FK `ON DELETE CASCADE`, índices de `channel_id` e `(status, created_at)`, unique de `public_id` como constraint). Ciclo `migration:run`, `migration:revert` e `migration:run` conferido no banco de dev: tabela e `videos_status_enum` somem e voltam.
+  - `Video` entrou nos 10 arrays `ALL_ENTITIES` dos specs de auth, users e channels. Sem isso, o `Channel#videos` quebra a metadata do TypeORM nesses specs. O e2e não precisou de ajuste porque usa `autoLoadEntities` via `VideosModule`.
+  - O spec da entidade também cobre o transformer de `size_bytes` (10 GiB volta como `number`) e o AC de que apagar usuário com canal continua bloqueado pela FK da fase 02.
+  - O spec de migrations ganhou um teste do conteúdo do enum e um teste de revert do `CreateVideos`, que roda antes do revert de `CreateAuthTokens` que já existia.
 
 ### SI-03.4 — StorageModule com cliente interno e assinador público
 - **Status:** pending
