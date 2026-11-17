@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 16/17 completed
+**SIs:** 17/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -169,6 +169,12 @@
   - O e2e confere os headers servidos pelo MinIO de verdade, seguindo o `Location`: `Content-Disposition` exato para `aula.mp4`, `filename*` para o nome com acento e `Content-Length` igual a `size_bytes`.
 
 ### SI-03.17 — OpenAPI exportado, api.http e CLAUDE.md com a seção de vídeos
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 novos passing no `src/openapi-export.integration-spec.ts` (23 no arquivo); suíte completa verde (unit 358/358, e2e 83/83, tsc e lint com exit 0)
+- **Observations:**
+  - `openapi.json` regenerado (+495 linhas): seis rotas na tag `videos`, todas com `access-token`, os códigos do Error Catalog referenciando `ApiErrorEnvelope`, e `302` com header `Location` em stream e download. O `src/metadata.ts` (stub) não mudou.
+  - **Follow-up fora de escopo:** os schemas de DTO no `openapi.json` exportado saem com `properties: {}`, tanto os novos de vídeo quanto os de auth que já estavam commitados desde a fase 02. O `openapi:export` roda via `ts-node`, que não aplica o plugin do `@nestjs/swagger` (só o `nest build` aplica), e o `metadata.ts` é um stub. Os ACs desta fase (rotas, 302/Location, erros) estão completos; corrigir o export é tarefa separada.
+  - `api.http`: seção de vídeos com as requisições 10 a 16, capturando `public_id`, a URL da parte 1 e o `ETag` do PUT. O `ETag` do MinIO já vem entre aspas, então a variável entra sem aspas no JSON do complete. Conferido reproduzindo as 7 requisições em ordem com `curl` do host, contra a API compilada e o `video-worker` no ar: 201, 200, 200 (MinIO), 202, 200 até `ready`, 302 e 302. O usuário temporário, o vídeo, os objetos e os refresh tokens foram apagados depois.
+  - `nestjs-project/CLAUDE.md`: "subir o ambiente" agora inclui o `video-worker` e mantém o `start:dev` fora; checks de prontidão de Redis, MinIO, `minio-init` e do log do worker (incluindo a mensagem de `node_modules` ausente); serviços novos; ffmpeg na imagem; `setup-test-env.ts`, `--runInBand` e `startTestProcessor()` na seção de Jest; `dist-worker/` na seção de build; e uma seção "Videos" com módulos, fluxo de upload, ciclo de status e variáveis de ambiente. Os comandos de prontidão documentados foram executados com sucesso no ambiente atual (não recriei o ambiente do zero com `down -v`).
+  - `CLAUDE.md` da raiz: Message Queue virou `BullMQ on Redis`, o Video Worker virou o serviço `video-worker` do mesmo codebase, e entrou a seção "Videos (phase 03)". Todos os identificadores e caminhos citados nas seções de vídeo foram conferidos por script contra o código (só `.env.example` e `PONG` não casam, e são nome de arquivo e saída do Redis).
+  - **Follow-up fora de escopo:** o `CLAUDE.md` da raiz ainda diz que `next-frontend/` "not yet initialized", mas a pasta existe (fase 02 frontend). Não mexi porque não é desta fase.
