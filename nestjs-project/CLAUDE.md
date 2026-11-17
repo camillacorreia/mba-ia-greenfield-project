@@ -75,7 +75,7 @@ npm run build                            # Compile to dist/
 npm run start:prod                       # Run compiled build
 npm run start:worker                     # Run the compiled worker (dist/worker.js, after npm run build)
 
-npm test                                 # Unit tests
+npm test                                 # Unit + integration tests (always with --runInBand)
 npm run test:watch                       # Unit tests in watch mode
 npm run test:cov                         # Coverage report
 npm run test:e2e                         # End-to-end tests (always with --runInBand)
@@ -96,11 +96,11 @@ curl http://localhost:3000
 
 ### Test execution
 
-Integration and e2e suites share a single test database. They **must** be run with `--runInBand`:
+Integration and e2e suites share a single test database and the Redis test prefix. They **must** run with `--runInBand`, and both scripts already pass it:
 
 ```bash
-docker compose exec nestjs-api npm test -- --runInBand
-docker compose exec nestjs-api npm run test:e2e   # already configured
+docker compose exec nestjs-api npm test           # jest --runInBand
+docker compose exec nestjs-api npm run test:e2e   # jest --config ./test/jest-e2e.json --runInBand
 ```
 
 Parallel execution causes FK violations, deadlocks, and cross-suite contamination because suites truncate or seed shared tables concurrently.
@@ -133,7 +133,7 @@ These settings are required in `package.json` (jest config) and `test/jest-e2e.j
 
 - `setupFiles` — `["dotenv/config", "<rootDir>/test/setup-test-env.ts"]` in `package.json` (rootDir `src`) and `["dotenv/config", "<rootDir>/../src/test/setup-test-env.ts"]` in `test/jest-e2e.json` (rootDir `test`). `dotenv/config` loads `.env` inside the Jest process (without it `DB_HOST`, `JWT_SECRET`, etc. fall back to undefined or to the host's `localhost`). `setup-test-env.ts` runs right after it and isolates every suite from runtime data: `QUEUE_PREFIX=streamtube-test`, `S3_BUCKET_VIDEOS=videos-test`, `S3_BUCKET_THUMBNAILS=thumbnails-test` and `S3_PUBLIC_ENDPOINT` equal to `S3_ENDPOINT` (the test client is inside the Compose network). The `video-worker` only listens to the `streamtube` prefix, so it never consumes test jobs.
 - `testRegex: '.*\\.(spec|integration-spec)\\.ts$'` — covers both unit (`*.spec.ts`) and integration (`*.integration-spec.ts`) suffixes.
-- `npm run test:e2e` passes `--runInBand`: the e2e files share the database and clean tables in `beforeEach`.
+- `npm test` and `npm run test:e2e` pass `--runInBand`: the suites share the database and the test queue prefix, and clean tables in `beforeEach`.
 
 Tests that need the queue consumer start it themselves with `startTestProcessor()` (`src/test/start-test-processor.ts`), which boots `VideoProcessingModule` on the test prefix. Media fixtures for those tests live in `test/fixtures/media/` (generation commands in its README).
 
