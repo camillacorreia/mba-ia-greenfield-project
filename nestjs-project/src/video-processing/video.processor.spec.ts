@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { type Job, UnrecoverableError } from 'bullmq';
 import { VideoStatus } from '../videos/entities/video.entity';
 import { VideoLifecycleService } from '../videos/video-lifecycle.service';
+import { DraftExpiryService } from './draft-expiry.service';
 import { VideoProcessingService } from './video-processing.service';
 import { VideoProcessor } from './video.processor';
 
@@ -19,6 +20,7 @@ describe('VideoProcessor', () => {
   let processor: VideoProcessor;
   const processing = { process: jest.fn() };
   const lifecycle = { markFailed: jest.fn() };
+  const draftExpiry = { expireDrafts: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -30,6 +32,7 @@ describe('VideoProcessor', () => {
         VideoProcessor,
         { provide: VideoProcessingService, useValue: processing },
         { provide: VideoLifecycleService, useValue: lifecycle },
+        { provide: DraftExpiryService, useValue: draftExpiry },
       ],
     }).compile();
     processor = module.get(VideoProcessor);
@@ -40,6 +43,15 @@ describe('VideoProcessor', () => {
       await processor.process(job());
 
       expect(processing.process).toHaveBeenCalledWith('video-1');
+    });
+
+    it('should dispatch expire-drafts to DraftExpiryService', async () => {
+      draftExpiry.expireDrafts.mockResolvedValue(2);
+
+      await processor.process(job({ name: 'expire-drafts', data: {} }));
+
+      expect(draftExpiry.expireDrafts).toHaveBeenCalledTimes(1);
+      expect(processing.process).not.toHaveBeenCalled();
     });
 
     it('should reject an unknown job name as unrecoverable', async () => {

@@ -3,7 +3,9 @@ import { Logger } from '@nestjs/common';
 import { type Job, UnrecoverableError } from 'bullmq';
 import { VideoStatus } from '../videos/entities/video.entity';
 import { VideoLifecycleService } from '../videos/video-lifecycle.service';
+import { DraftExpiryService } from './draft-expiry.service';
 import {
+  EXPIRE_DRAFTS_JOB,
   PROCESS_VIDEO_JOB,
   type ProcessVideoJobData,
   VIDEO_PROCESSING_QUEUE,
@@ -20,6 +22,7 @@ export class VideoProcessor extends WorkerHost {
   constructor(
     private readonly processing: VideoProcessingService,
     private readonly lifecycle: VideoLifecycleService,
+    private readonly draftExpiry: DraftExpiryService,
   ) {
     super();
   }
@@ -30,6 +33,13 @@ export class VideoProcessor extends WorkerHost {
         return this.processing.process(
           (job.data as ProcessVideoJobData).videoId,
         );
+      case EXPIRE_DRAFTS_JOB: {
+        const expired = await this.draftExpiry.expireDrafts();
+        if (expired > 0) {
+          this.logger.log(`Expired ${expired} abandoned draft(s)`);
+        }
+        return;
+      }
       default:
         throw new UnrecoverableError(`Unknown job name: ${job.name}`);
     }

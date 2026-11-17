@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 13/17 completed
+**SIs:** 14/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -117,9 +117,15 @@
   - O `AppModule` não importa o `VideoProcessingModule` (conferido por grep); só o `start-test-processor.ts` importa por enquanto, e o entrypoint do worker vem no SI-03.13.
 
 ### SI-03.12 — Expiração de rascunhos abandonados (job expire-drafts)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 novos passing (6 em `draft-expiry.service.spec.ts`, 4 em `draft-expiry.service.integration-spec.ts`, 1 em `draft-expiry.scheduler.integration-spec.ts`, 1 no `video.processor.spec.ts`); suíte completa verde (unit 337/337, e2e 78/78, tsc e lint com exit 0)
+- **Observations:**
+  - Assinaturas de `upsertJobScheduler`/`getJobSchedulers` conferidas nos tipos do BullMQ 6.7.7 instalado antes de escrever o scheduler.
+  - O retorno de `expireDrafts` conta só os vídeos em que o `markFailed` de fato mudou a linha. Um rascunho que saiu de `draft` entre a busca e a transição não entra na contagem.
+  - O "multipart já abortado pela regra de lifecycle" do AC #4 é, na prática, o `stale_uploads_expiry` do MinIO (desvio do SI-03.1). O `abortVideoUpload` devolve `false` e a expiração segue para o `markFailed`. O integration simula isso abortando antes.
+  - O despacho do `expire-drafts` no `VideoProcessor` loga quantos rascunhos expiraram quando há algum. O `onFailed` já ignorava esse nome de job, então uma falha da varredura não marca nenhum vídeo.
+  - O teste do scheduler faz dois upserts reais (um `onApplicationBootstrap` explícito e um segundo `init()` de outro módulo) depois de limpar a fila, e confere um único scheduler com `every: 3600000`.
+  - Efeito colateral nos testes: o `startTestProcessor()` agora também registra o scheduler, que gera um `expire-drafts` no prefixo de teste ao subir. É inofensivo (os testes do pipeline só criam vídeos recentes e fazem `obliterate` no `beforeEach`), e a suíte completa passou.
 
 ### SI-03.13 — Entrypoint do worker e serviço video-worker no Compose
 - **Status:** pending
