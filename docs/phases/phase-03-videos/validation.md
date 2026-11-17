@@ -2,7 +2,7 @@
 kind: phase
 name: phase-03-videos
 status: dirty
-issue_count: 1
+issue_count: 0
 sources_mtime:
   docs/phases/phase-03-videos/context.md: "2026-11-17T13:23:51-03:00"
   docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:23:30-03:00"
@@ -32,7 +32,8 @@ issues:
     resolved_by: phase-03-videos/TD-03
     summary: "No TD picks the S3 client library for multipart, presign and HeadObject"
   - id: AMB-5
-    status: open
+    status: resolved
+    resolved_by: phase-03-videos/TD-09
     summary: "Video ownership undefined: video row belongs to the user or to the channel"
 advisories: []
 ---
@@ -47,7 +48,7 @@ _None._
 
 ### Ambiguities
 
-- **AMB-5** — Video ownership is not defined anywhere in scope. The capability "Pré-cadastro automático do vídeo como rascunho ao iniciar o upload" creates the `Video` row, and TD-07 restricts stream/download to "owner only", but no TD says who the owner is: the authenticated user (`user_id` FK) or the user's channel (`channel_id` FK, channel created in phase 02 per phase-02-auth/TD-10). The only mention, in TD-03, is that storage keys by `videoId` stay "independent of channel data", which settles storage but not the data model. The choice drives the entity FK and its migration, the owner check in TD-07 and the initiate endpoint of TD-02, and it is what Phase 04's "painel de administração do canal" will query, so changing it later means a data migration. Explicit choice: (a) `Video` belongs to the channel (`channel_id` FK), owner check resolves the channel of the authenticated user; (b) `Video` belongs to the user (`user_id` FK), Phase 04 joins through the user to reach the channel; (c) both FKs, with the redundancy documented. Record the answer as a revision on TD-06 or TD-09 (data model) via /plan-resolve phase-03-videos.
+_None._
 
 ### Missing Decisions
 
@@ -77,3 +78,4 @@ _None._ (UI Inventory deferred; check not applicable.)
 - **AMB-3** — Phase 03 frontend boundary undefined: upload/player UI in or out of scope. resolved_by: deferred_capability (clarification: backend-only phase; upload, player and download UI deferred to a future frontend slice, as phase-02-auth / phase-02-auth-frontend did. Three rows added to `context.md` `## Non-UI / Deferred Capabilities`, carrying the MinIO CORS with `ETag` exposed and the BFF bridging of the stream/download redirect as pending items of that slice. `**Affected subprojects:**` in `docs/project-plan.md` was not edited, since this stage does not write to project-plan.md).
 - **AMB-4** — TD-10 worker test isolation: dev video-worker may consume test jobs. resolved_by: phase-03-videos/TD-10 (Revision 2026-11-17: the test boots its own processor via `createApplicationContext`/`TestingModule` with a test-only queue prefix and test buckets; Redis DB index alternative dropped).
 - **MD-1** — No TD picks the S3 client library for multipart, presign and HeadObject. resolved_by: phase-03-videos/TD-03 (Revision 2026-11-17: `**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner`). Resolved as a TD-03 revision, the path the issue's explicit choice allows when the choice is considered implied, by explicit user answer; no new TD created.
+- **AMB-5** — Video ownership undefined: video row belongs to the user or to the channel. resolved_by: phase-03-videos/TD-09 (Revision 2026-11-17: option (a), `Video` belongs to the channel via `channel_id` FK to `channels.id` with `ON DELETE CASCADE`; the owner check resolves the authenticated user's channel (1:1, created at registration in phase 02) and compares it with `video.channel_id`. Recorded as a TD-09 revision by explicit user answer).

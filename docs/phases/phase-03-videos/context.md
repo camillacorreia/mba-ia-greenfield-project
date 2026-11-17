@@ -3,8 +3,8 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-17T12:56:47-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:23:30-03:00"
-  docs/phases/phase-03-videos/library-refs.md: "2026-11-17T13:23:51-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:26:25-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-11-17T13:26:25-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-17T12:56:47-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-17T12:56:47-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-17T12:56:47-03:00"
@@ -56,7 +56,7 @@ sources_mtime:
 | phase-03-videos/TD-07 | phase | Cross-layer | Streaming and Download Delivery | decided | A (presigned GET URLs, storage serves 206, redirect contract) | — |
 | phase-03-videos/TD-08 | phase | Backend | Accepted Upload Formats and Playback Compatibility | decided | A (MP4/WebM allowlist + ffprobe codec check) | — |
 | phase-03-videos/TD-09 | phase | Backend | Video Status Lifecycle and Failure Handling | decided | D (single `status` enum draft → processing → ready / failed) | — |
-|     └─ Last revision: 2026-11-17 — New transition `draft → failed` for abandoned uploads. A scheduled job (BullMQ… | | | | | | |
+|     └─ Last revision: 2026-11-17 — Video ownership fixed: the `Video` row belongs to the channel through `channel_id` (F… | | | | | | |
 | phase-03-videos/TD-10 | phase | Backend | Testing Strategy for the Async Upload/Processing Pipeline | decided | A (real worker as a Compose service) | — |
 |     └─ Last revision: 2026-11-17 — Test isolation mechanism fixed. The e2e/integration test boots its own worker … | | | | | | |
 
@@ -137,6 +137,7 @@ _Source files:_
 
 **Revisions:**
 - 2026-11-17 — New transition `draft → failed` for abandoned uploads. A scheduled job (BullMQ Job Scheduler via `upsertJobScheduler`, on the same Redis/BullMQ infrastructure of TD-01, consumed by the `video-worker`) marks as `failed`, with reason `UPLOAD_EXPIRED`, every video in `draft` created more than 1 day ago, aligned with the TD-02 lifecycle rule that aborts incomplete multipart uploads after 1 day. For each expired draft it also tries `AbortMultipartUpload` on the storage (the row keeps the multipart `uploadId`; a `NoSuchUpload` answer means the lifecycle rule already aborted it and is not an error). The run cadence is an implementation parameter. Rationale: AMB-1 of plan-validate, without this rule an abandoned upload left the row in `draft` forever with a `public_id` allocated.
+- 2026-11-17 — Video ownership fixed: the `Video` row belongs to the channel through `channel_id` (FK to `channels.id`, `ON DELETE CASCADE`), with no `user_id` column. The owner check (TD-07 stream/download, TD-02 initiate/complete) resolves the channel of the authenticated user (1:1, created at registration in phase 02) and compares it with `video.channel_id`; the initiate endpoint writes that channel's id on the draft row. Phase 04's channel admin panel queries videos by `channel_id` directly. Storage keys stay by `videoId` (TD-03), unaffected. The existing `channels.user_id` FK is `ON DELETE NO ACTION` (migration `CreateUsersAndChannels1775687773260`), so deleting a user is still blocked while its channel exists; the cascade only applies from channel to videos. Rationale: AMB-5 of plan-validate, no TD defined whether the video belongs to the user or to the channel, and the choice drives the entity FK, its migration and the owner check, so changing it later would need a data migration.
 
 ### phase-03-videos/TD-10
 
