@@ -213,4 +213,48 @@ export class VideosController {
     // no corpo; o contrato pede 302 com corpo vazio.
     res.status(HttpStatus.FOUND).location(url).end();
   }
+
+  @Get(':publicId/download')
+  @HttpCode(HttpStatus.FOUND)
+  @ApiOperation({
+    summary: 'Download a video',
+    description:
+      'Redirects to a pre-signed storage URL valid for 1 hour that serves the original file as an attachment with its original name. Only for ready videos.',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to the signed storage URL',
+    headers: {
+      Location: {
+        description:
+          'Pre-signed GetObject URL with Content-Disposition attachment, valid for 3600 seconds',
+        schema: { type: 'string', format: 'uri' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Video does not exist or belongs to another channel (VIDEO_NOT_FOUND)',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready for download (VIDEO_NOT_READY)',
+    schema: ERROR_SCHEMA,
+  })
+  async download(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const url = await this.videosService.getDownloadUrl(user.sub, publicId);
+    // Mesmo motivo do stream: 302 com corpo vazio, sem o texto do res.redirect().
+    res.status(HttpStatus.FOUND).location(url).end();
+  }
 }

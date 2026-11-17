@@ -470,6 +470,44 @@ describe('VideosService', () => {
     });
   });
 
+  describe('getDownloadUrl', () => {
+    const PUBLIC_ID = 'AbCdEfGhIj_';
+
+    it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.FAILED])(
+      'should reject a video in %s with VideoNotReadyException',
+      async (status) => {
+        videoRepository.findOneBy.mockResolvedValue(draftVideo({ status }));
+
+        await expect(
+          service.getDownloadUrl(USER_ID, PUBLIC_ID),
+        ).rejects.toBeInstanceOf(VideoNotReadyException);
+        expect(storageService.presignVideoGet).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should pass the attachment disposition with the original name to the signer', async () => {
+      videoRepository.findOneBy.mockResolvedValue(
+        draftVideo({
+          status: VideoStatus.READY,
+          upload_id: null,
+          content_type: 'video/mp4',
+          original_filename: 'vídeo final.mp4',
+        }),
+      );
+      storageService.presignVideoGet.mockResolvedValue('http://signed');
+
+      await expect(service.getDownloadUrl(USER_ID, PUBLIC_ID)).resolves.toBe(
+        'http://signed',
+      );
+      expect(storageService.presignVideoGet).toHaveBeenCalledWith('video-1', {
+        signer: 'public',
+        expiresIn: 3600,
+        responseContentType: 'video/mp4',
+        responseContentDisposition: `attachment; filename="v_deo final.mp4"; filename*=UTF-8''v%C3%ADdeo%20final.mp4`,
+      });
+    });
+  });
+
   function draftVideo(overrides: Partial<Video> = {}): Video {
     return {
       id: 'video-1',

@@ -28,6 +28,7 @@ import type { InitiateUploadDto } from './dto/initiate-upload.dto';
 import type { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import type { RequestPartUrlsDto } from './dto/request-part-urls.dto';
 import { Video, VideoStatus } from './entities/video.entity';
+import { attachmentDisposition } from './content-disposition.util';
 import { generatePublicId, isValidPublicId } from './public-id.util';
 import { VideoLifecycleService } from './video-lifecycle.service';
 import {
@@ -216,6 +217,19 @@ export class VideosService {
       signer: 'public',
       expiresIn: READ_URL_EXPIRES_IN_SECONDS,
       responseContentType: video.content_type,
+    });
+  }
+
+  /** Igual ao stream, mas força o download com o nome original (TD-07). */
+  async getDownloadUrl(userId: string, publicId: string): Promise<string> {
+    const video = await this.findReadyOwnedVideo(userId, publicId);
+    return this.storageService.presignVideoGet(video.id, {
+      signer: 'public',
+      expiresIn: READ_URL_EXPIRES_IN_SECONDS,
+      responseContentType: video.content_type,
+      responseContentDisposition: attachmentDisposition(
+        video.original_filename,
+      ),
     });
   }
 

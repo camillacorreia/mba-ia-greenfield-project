@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 12/17 completed
+**SIs:** 13/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -142,9 +142,13 @@
   - A URL pré-assinada de leitura traz `x-amz-checksum-mode=ENABLED`, que o SDK acrescenta por padrão (`responseChecksumValidation`); o MinIO aceita normalmente.
 
 ### SI-03.16 — Endpoint GET /videos/:publicId/download (download do vídeo)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 novos passing (5 em `content-disposition.util.spec.ts`, 4 no unit `videos.service.spec.ts`, 5 em `test/videos-download.e2e-spec.ts`); suíte completa verde (unit 325/325, e2e 78/78, tsc e lint com exit 0)
+- **Observations:**
+  - **Mesmo desvio do SI-03.15, `@Res()` no lugar de `@Redirect()`:** o contrato do download também pede `Response 302: corpo vazio`, e o `@Redirect()` escreveria `Found. Redirecting to ...`. Apliquei a mesma solução direto, por consistência com a decisão já registrada no SI-03.15.
+  - `attachmentDisposition`: o fallback ASCII troca cada caractere fora de ASCII por `_` (`vídeo final.mp4` → `filename="v_deo final.mp4"`), e o `filename*` escapa também `'()*!`, que o `encodeURIComponent` deixa passar mas a RFC 8187 exige. Se não sobrar nada do nome depois da limpeza, usa `video`.
+  - A remoção de CR/LF impede injeção de header pelo `original_filename` (coberto no unit com `\r\nSet-Cookie`).
+  - O e2e confere os headers servidos pelo MinIO de verdade, seguindo o `Location`: `Content-Disposition` exato para `aula.mp4`, `filename*` para o nome com acento e `Content-Length` igual a `size_bytes`.
 
 ### SI-03.17 — OpenAPI exportado, api.http e CLAUDE.md com a seção de vídeos
 - **Status:** pending
