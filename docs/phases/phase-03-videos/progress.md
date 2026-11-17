@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/17 completed
+**SIs:** 4/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -31,9 +31,14 @@
   - O spec de migrations ganhou um teste do conteúdo do enum e um teste de revert do `CreateVideos`, que roda antes do revert de `CreateAuthTokens` que já existia.
 
 ### SI-03.4 — StorageModule com cliente interno e assinador público
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 14 passing (`storage.service.integration-spec.ts`, `storage.module.spec.ts`); suíte completa verde (unit 190/190, e2e 52/52, tsc e lint com exit 0)
+- **Observations:**
+  - O MinIO responde 204 ao `AbortMultipartUpload` de um `UploadId` já abortado, e até de um inexistente. Ele nunca devolve `NoSuchUpload` no abort, então o `false` do AC não aparecia (1 tentativa de fix). Conferido com um script direto no SDK: só o `ListParts` acusa `NoSuchUpload` nesse caso. O `abortVideoUpload` agora roda um `ListParts` (`MaxParts: 1`) antes do abort, e continua tratando `NoSuchUpload` no próprio abort, que é como o S3 da AWS responde. Custa uma chamada a mais por abort, e o único consumidor é o `expire-drafts`.
+  - Os hosts dos assinadores são conferidos num módulo à parte, com `S3_PUBLIC_ENDPOINT=http://localhost:9000`, porque nos testes os dois endpoints são iguais. Esse bloco só assina URLs e não faz requisição.
+  - Testes além da tabela do SI: tradução de erros (`StorageInvalidPartsError` com ETag errado, `StorageNoSuchUploadError` ao concluir upload abortado), `headVideo` devolvendo `null`, overrides de `Content-Type` e `Content-Disposition` no GET assinado, e ausência de checksum na URL de `UploadPart`.
+  - Os objetos criados nos buckets `-test` são apagados no `afterAll`. Os multiparts abertos pelos testes são abortados no próprio teste.
+  - O `StorageService` destrói os dois `S3Client` no `onModuleDestroy`.
 
 ### SI-03.5 — Fila video-processing e producer idempotente
 - **Status:** pending
