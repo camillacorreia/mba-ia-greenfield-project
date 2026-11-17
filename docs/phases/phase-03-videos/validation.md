@@ -2,10 +2,10 @@
 kind: phase
 name: phase-03-videos
 status: dirty
-issue_count: 0
+issue_count: 1
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-17T13:12:13-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:09:32-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-17T13:23:51-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:23:30-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -31,6 +31,9 @@ issues:
     status: resolved
     resolved_by: phase-03-videos/TD-03
     summary: "No TD picks the S3 client library for multipart, presign and HeadObject"
+  - id: AMB-5
+    status: open
+    summary: "Video ownership undefined: video row belongs to the user or to the channel"
 advisories: []
 ---
 
@@ -44,7 +47,7 @@ _None._
 
 ### Ambiguities
 
-_None._
+- **AMB-5** — Video ownership is not defined anywhere in scope. The capability "Pré-cadastro automático do vídeo como rascunho ao iniciar o upload" creates the `Video` row, and TD-07 restricts stream/download to "owner only", but no TD says who the owner is: the authenticated user (`user_id` FK) or the user's channel (`channel_id` FK, channel created in phase 02 per phase-02-auth/TD-10). The only mention, in TD-03, is that storage keys by `videoId` stay "independent of channel data", which settles storage but not the data model. The choice drives the entity FK and its migration, the owner check in TD-07 and the initiate endpoint of TD-02, and it is what Phase 04's "painel de administração do canal" will query, so changing it later means a data migration. Explicit choice: (a) `Video` belongs to the channel (`channel_id` FK), owner check resolves the channel of the authenticated user; (b) `Video` belongs to the user (`user_id` FK), Phase 04 joins through the user to reach the channel; (c) both FKs, with the redundancy documented. Record the answer as a revision on TD-06 or TD-09 (data model) via /plan-resolve phase-03-videos.
 
 ### Missing Decisions
 
