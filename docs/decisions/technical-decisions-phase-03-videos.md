@@ -51,6 +51,8 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
   The dual-write risk (video in `processing` with no job) is mitigated without a reconciliation sweep: the enqueue happens in the upload-completion endpoint with a deterministic `jobId` equal to the video id, so it is idempotent (BullMQ ignores an `add` whose `jobId` already exists). The order is enqueue first, then the `draft → processing` transition; if the enqueue fails, the API does not perform the transition and responds with an error, so the client can safely retry the completion call. If the transition fails after a successful enqueue, the retried call finds the job already present (no-op) and applies the transition. Consequences for implementation: the completion endpoint must be idempotent end to end (including an already-completed multipart upload, detected via `HeadObject` on the object key), and the worker must accept a video still in `draft` at pickup.
   Alternative considered and rejected: pg-boss (Option B). It offers transactional enqueue, but it puts the queue inside the transactional database (contradicting (a) and (b)) and has no official Nest module (contradicting (c)); the idempotent enqueue above makes its main advantage unnecessary for this flow.
 
+**Note:** Decision deliberately diverged from the Recommendation: BullMQ on Redis (Option A) was chosen over pg-boss (Option B) because the target architecture keeps the Message Queue as a container separate from the Database, job polling and locks stay off the transactional PostgreSQL, and `@nestjs/bullmq` is the official Nest module. The Recommendation above is kept as the research record; implementation follows the Decision, including the idempotent enqueue (`jobId = videoId`) before the `draft → processing` transition.
+
 ---
 
 ## TD-02: Large File Upload Protocol (up to 10GB, bytes never pass through the API)
@@ -265,7 +267,7 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
 - **Pros:** broader acceptance than A with no re-encode; remux is I/O-bound and fast relative to transcode.
 - **Cons:** still rewrites the whole file (full download + upload of up to 10GB, contradicting TD-05 Option A's remote-read model); two storage objects per remuxed video; more branches to test.
 
-**Recommendation:** Option A for this phase. It keeps the worker a light metadata/thumbnail job (consistent with TD-05) and makes the failure explicit; Option C can be added later as an additive step if users need MOV/MKV, without changing any contract.
+**Recommendation:** Option A. Accepting only browser-playable formats is enough for this phase, and it keeps the worker a light metadata/thumbnail job (consistent with TD-05) and makes the failure explicit; Option C can be added later as an additive step if users need MOV/MKV, without changing any contract.
 
 **Decision:** A (MP4/WebM allowlist: declared type checked at initiate, real container/codecs checked by ffprobe in the worker; non-playable sources go to `failed` with `UNSUPPORTED_CODEC`).
 
@@ -301,7 +303,7 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
 - **Pros:** the lifecycle the phase scope asks for is explicit and named; one column in this phase; publication stays out of this enum, so Phase 04 does not rewrite it.
 - **Cons:** the word "draft" is used here for "upload not completed", while Phase 04's "rascunho → publicação" is about publication; Phase 04 must name its field so the two meanings do not collide.
 
-**Recommendation:** Option B, because it separates the two concepts the plan uses the same word for. Failure policy common to all options: transient errors retry with backoff, permanent errors fail immediately, and the original object is kept.
+**Recommendation:** Option B. A separate `processing_status` keeps apart the two concepts the plan calls "rascunho" (upload/processing state in this phase, publication state in Phase 04), so Phase 04 can add publication without migrating this column. Failure policy common to all options: transient errors retry with backoff, permanent errors fail immediately, and the original object is kept.
 
 **Decision:** D (single `status` enum `draft → processing → ready | failed`; visibility/publication is a separate field added in Phase 04, not now). Lifecycle and failure policy:
   - `draft`: row created at upload initiate (TD-02), with `public_id` (TD-06).
@@ -311,6 +313,8 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
   - Transient failures (storage timeouts, network, I/O errors from ffprobe/ffmpeg) retry with 3 attempts and exponential backoff (BullMQ `attempts: 3`, `backoff: { type: 'exponential' }`); after the last attempt the video goes to `failed`.
   - Permanent failures go to `failed` immediately, without retry (BullMQ `UnrecoverableError`), with the reason recorded.
   - The original object is kept in every failure case. The job is idempotent per `videoId` (deterministic object keys, overwrite on rerun).
+
+**Note:** Decision deliberately diverged from the Recommendation: a single `status` with the lifecycle the phase scope asks for (Option D) was chosen over a separate `processing_status` (Option B), so the "rascunho" pre-registration is an explicit, named state in this phase. Visibility/publication stays out of this enum and becomes its own field in Phase 04. The Recommendation above is kept as the research record; implementation follows the Decision.
 
 ---
 
