@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/17 completed
+**SIs:** 9/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -81,9 +81,14 @@
   - `PART_URL_EXPIRES_IN_SECONDS = 3600` entrou em `videos.constants.ts`, e o cálculo de `part_count` virou a função `partCountFor`, usada por `initiateUpload` e `requestPartUrls`.
 
 ### SI-03.9 — Endpoint POST /videos/:publicId/upload/complete (fechamento e enfileiramento)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 16 novos passing (10 no unit `videos.service.spec.ts`, 1 no `videos.service.integration-spec.ts`, 5 em `test/videos-upload-complete.e2e-spec.ts`); suíte completa verde (unit 252/252, e2e 68/68, tsc e lint com exit 0)
+- **Observations:**
+  - **Fixture fora de ordem no plano:** o spec e2e e a linha de integration do SI pedem "upload real da fixture" MP4 h264/aac, mas quem cria `test/fixtures/media/` é o SI-03.10, que não é dependência do SI-03.9 e vem depois no mapa. Pra não puxar parte do SI-03.10 pra cá, os testes usam 64 KiB de bytes aleatórios. Nenhum processor roda nessas suítes, então o conteúdo não muda nenhum AC: só o tamanho e os ETags importam. Pendente de decisão: trocar pela fixture depois do SI-03.10.
+  - O caminho `NoSuchUpload` no complete trata como retry de um complete anterior e segue para o `HeadObject`; sem objeto final, vira `INVALID_UPLOAD_PARTS`. Erros inesperados do storage sobem sem tradução (coberto no unit).
+  - No 422 o vídeo vai para `failed` mantendo o `upload_id` antigo, que já não vale no storage depois do complete. Isso não afeta a expiração (`expire-drafts` só olha `draft`), e o `abortVideoUpload` devolve `false` nesse caso.
+  - O `VideosModule` importa o `VideoProcessingQueueModule`, então a API agora abre conexão com o Redis no boot. O integration do `VideosService` passou a registrar `BullModule.forRootAsync` e a limpar a fila de teste.
+  - Helper e2e: `VideosE2eContext.queue` passou a ser público (asserts de job); `reset()`/`close()` agora também apagam o objeto final `{id}` e a thumbnail `{id}.jpg` de cada vídeo nos buckets de teste; e entrou `createDraftWithUploadedPart(user, bytes, { declaredSize?, contentType? })`, que cria o rascunho, pede a URL da parte 1 e faz o PUT. O `tsc` exigiu `Uint8Array<ArrayBuffer>` no parâmetro, por causa do `BodyInit` do `fetch`.
 
 ### SI-03.10 — MediaInspector (ffprobe/ffmpeg) e política de formatos
 - **Status:** pending

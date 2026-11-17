@@ -1,3 +1,4 @@
+import { DeleteObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
@@ -10,11 +11,18 @@ import { AuthService } from '../../src/auth/auth.service';
 import { DomainExceptionFilter } from '../../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../../src/common/filters/validation-exception.filter';
 import queueConfig from '../../src/config/queue.config';
+import storageConfig from '../../src/config/storage.config';
 import { bullRootOptions } from '../../src/queue/bull-root.options';
+import { S3_INTERNAL_CLIENT } from '../../src/storage/storage.constants';
 import { StorageService } from '../../src/storage/storage.service';
 import { cleanAllTables } from '../../src/test/create-test-data-source';
 import { Video } from '../../src/videos/entities/video.entity';
 import { VIDEO_PROCESSING_QUEUE } from '../../src/video-processing/video-processing.constants';
+
+export interface UploadedDraft {
+  publicId: string;
+  etag: string;
+}
 
 export interface AuthenticatedUser {
   email: string;
@@ -29,7 +37,8 @@ export interface AuthenticatedUser {
 export class VideosE2eContext {
   app: INestApplication<App>;
   dataSource: DataSource;
-  private queue: Queue;
+  /** Fila `video-processing` no prefixo de teste, para asserts e limpeza. */
+  queue: Queue;
   private throttlerStorage: ThrottlerStorageService;
 
   async init(): Promise<void> {
@@ -58,14 +67,14 @@ export class VideosE2eContext {
   }
 
   async reset(): Promise<void> {
-    await this.abortOpenUploads();
+    await this.cleanStorage();
     await cleanAllTables(this.dataSource);
     await this.queue.obliterate({ force: true });
     this.throttlerStorage.storage.clear();
   }
 
   async close(): Promise<void> {
-    await this.abortOpenUploads();
+    await this.cleanStorage();
     await this.queue.close();
     await this.app.close();
   }
@@ -102,16 +111,60 @@ export class VideosE2eContext {
     return { email, accessToken: access_token };
   }
 
-  /** Aborta os multiparts dos rascunhos para não deixar uploads órfãos no bucket de teste. */
-  private async abortOpenUploads(): Promise<void> {
+  /**
+   * Cria o rascunho por `POST /videos` e envia `bytes` como parte 1 pela URL
+   * assinada. `declaredSize` permite declarar um tamanho diferente do enviado.
+   */
+  async createDraftWithUploadedPart(
+    user: AuthenticatedUser,
+    bytes: Uint8Array<ArrayBuffer>,
+    options: { declaredSize?: number; contentType?: string } = {},
+  ): Promise<UploadedDraft> {
+    const created = await request(this.server())
+      .post('/videos')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({
+        filename: 'aula.mp4',
+        size: options.declaredSize ?? bytes.length,
+        content_type: options.contentType ?? 'video/mp4',
+      })
+      .expect(201);
+    const { public_id: publicId } = created.body as { public_id: string };
+    const partUrls = await request(this.server())
+      .post(`/videos/${publicId}/upload/part-urls`)
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ part_numbers: [1] })
+      .expect(200);
+    const { parts } = partUrls.body as { parts: { url: string }[] };
+    const put = await fetch(parts[0].url, { method: 'PUT', body: bytes });
+    if (put.status !== 200) {
+      throw new Error(`Part upload failed with status ${put.status}`);
+    }
+    return { publicId, etag: put.headers.get('etag') ?? '' };
+  }
+
+  /**
+   * Para cada vídeo da suíte: aborta o multipart ainda aberto e apaga o objeto
+   * final e a thumbnail, para não deixar lixo nos buckets de teste.
+   */
+  private async cleanStorage(): Promise<void> {
     const storage = this.app.get(StorageService);
-    const drafts = await this.dataSource
-      .getRepository(Video)
-      .createQueryBuilder('video')
-      .where('video.upload_id IS NOT NULL')
-      .getMany();
-    for (const draft of drafts) {
-      await storage.abortVideoUpload(draft.id, draft.upload_id ?? '');
+    const s3 = this.app.get<S3Client>(S3_INTERNAL_CLIENT);
+    const { bucketVideos, bucketThumbnails } = storageConfig();
+    const videos = await this.dataSource.getRepository(Video).find();
+    for (const video of videos) {
+      if (video.upload_id) {
+        await storage.abortVideoUpload(video.id, video.upload_id);
+      }
+      await s3.send(
+        new DeleteObjectCommand({ Bucket: bucketVideos, Key: video.id }),
+      );
+      await s3.send(
+        new DeleteObjectCommand({
+          Bucket: bucketThumbnails,
+          Key: `${video.id}.jpg`,
+        }),
+      );
     }
   }
 }

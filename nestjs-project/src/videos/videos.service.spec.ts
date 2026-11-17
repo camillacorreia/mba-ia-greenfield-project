@@ -5,12 +5,20 @@ import { ChannelsService } from '../channels/channels.service';
 import {
   ChannelNotFoundException,
   InvalidPartNumberException,
+  InvalidUploadPartsException,
   UnsupportedVideoFormatException,
+  UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
   VideoTooLargeException,
 } from '../common/exceptions/domain.exception';
+import {
+  StorageInvalidPartsError,
+  StorageNoSuchUploadError,
+} from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
+import { VideoLifecycleService } from './video-lifecycle.service';
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { VideosService } from './videos.service';
@@ -48,7 +56,12 @@ describe('VideosService', () => {
     createVideoUpload: jest.fn(),
     abortVideoUpload: jest.fn(),
     presignUploadPart: jest.fn(),
+    completeVideoUpload: jest.fn(),
+    headVideo: jest.fn(),
   };
+  const lifecycle = { markProcessing: jest.fn(), markFailed: jest.fn() };
+  const processingProducer = { enqueueProcessing: jest.fn() };
+  const callOrder: string[] = [];
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -57,6 +70,18 @@ describe('VideosService', () => {
     storageService.abortVideoUpload.mockResolvedValue(true);
     videoRepository.insert.mockResolvedValue({});
     videoRepository.findOneBy.mockResolvedValue(null);
+    callOrder.length = 0;
+    storageService.completeVideoUpload.mockResolvedValue(undefined);
+    storageService.headVideo.mockResolvedValue(5000000);
+    lifecycle.markFailed.mockResolvedValue(true);
+    lifecycle.markProcessing.mockImplementation(() => {
+      callOrder.push('markProcessing');
+      return Promise.resolve(true);
+    });
+    processingProducer.enqueueProcessing.mockImplementation(() => {
+      callOrder.push('enqueueProcessing');
+      return Promise.resolve();
+    });
     storageService.presignUploadPart.mockImplementation(
       (key: string, uploadId: string, partNumber: number) =>
         Promise.resolve(
@@ -70,6 +95,8 @@ describe('VideosService', () => {
         { provide: getRepositoryToken(Video), useValue: videoRepository },
         { provide: ChannelsService, useValue: channelsService },
         { provide: StorageService, useValue: storageService },
+        { provide: VideoLifecycleService, useValue: lifecycle },
+        { provide: VideoProcessingProducer, useValue: processingProducer },
       ],
     }).compile();
     service = module.get(VideosService);
@@ -283,6 +310,115 @@ describe('VideosService', () => {
         3,
         3600,
       );
+    });
+  });
+
+  describe('completeUpload', () => {
+    const PUBLIC_ID = 'AbCdEfGhIj_';
+    const PARTS = [
+      { part_number: 2, etag: '"etag-2"' },
+      { part_number: 1, etag: '"etag-1"' },
+    ];
+
+    beforeEach(() => {
+      videoRepository.findOneBy.mockResolvedValue(draftVideo());
+    });
+
+    it('should complete with the parts sorted, enqueue and only then mark processing', async () => {
+      const result = await service.completeUpload(USER_ID, PUBLIC_ID, {
+        parts: PARTS,
+      });
+
+      expect(storageService.completeVideoUpload).toHaveBeenCalledWith(
+        'video-1',
+        'upload-1',
+        [
+          { partNumber: 1, etag: '"etag-1"' },
+          { partNumber: 2, etag: '"etag-2"' },
+        ],
+      );
+      expect(processingProducer.enqueueProcessing).toHaveBeenCalledWith(
+        'video-1',
+      );
+      expect(callOrder).toEqual(['enqueueProcessing', 'markProcessing']);
+      expect(result).toEqual({
+        public_id: PUBLIC_ID,
+        status: VideoStatus.PROCESSING,
+      });
+    });
+
+    it.each([VideoStatus.PROCESSING, VideoStatus.READY, VideoStatus.FAILED])(
+      'should reject a video in %s without touching storage or queue',
+      async (status) => {
+        videoRepository.findOneBy.mockResolvedValue(draftVideo({ status }));
+
+        await expect(
+          service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+        ).rejects.toBeInstanceOf(VideoNotDraftException);
+        expect(storageService.completeVideoUpload).not.toHaveBeenCalled();
+        expect(processingProducer.enqueueProcessing).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should map parts rejected by the storage to InvalidUploadPartsException and keep the draft', async () => {
+      storageService.completeVideoUpload.mockRejectedValue(
+        new StorageInvalidPartsError(),
+      );
+
+      await expect(
+        service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+      ).rejects.toBeInstanceOf(InvalidUploadPartsException);
+      expect(lifecycle.markFailed).not.toHaveBeenCalled();
+      expect(lifecycle.markProcessing).not.toHaveBeenCalled();
+      expect(processingProducer.enqueueProcessing).not.toHaveBeenCalled();
+    });
+
+    it('should treat NoSuchUpload with the final object present as a retry and enqueue', async () => {
+      storageService.completeVideoUpload.mockRejectedValue(
+        new StorageNoSuchUploadError(),
+      );
+
+      await expect(
+        service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+      ).resolves.toMatchObject({ status: VideoStatus.PROCESSING });
+      expect(callOrder).toEqual(['enqueueProcessing', 'markProcessing']);
+    });
+
+    it('should map NoSuchUpload without the final object to InvalidUploadPartsException', async () => {
+      storageService.completeVideoUpload.mockRejectedValue(
+        new StorageNoSuchUploadError(),
+      );
+      storageService.headVideo.mockResolvedValue(null);
+
+      await expect(
+        service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+      ).rejects.toBeInstanceOf(InvalidUploadPartsException);
+      expect(processingProducer.enqueueProcessing).not.toHaveBeenCalled();
+    });
+
+    it('should rethrow unexpected storage errors', async () => {
+      const storageDown = new Error('storage down');
+      storageService.completeVideoUpload.mockRejectedValue(storageDown);
+
+      await expect(
+        service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+      ).rejects.toBe(storageDown);
+      expect(storageService.headVideo).not.toHaveBeenCalled();
+    });
+
+    it('should mark the video failed and throw on a size mismatch, without enqueueing', async () => {
+      storageService.headVideo.mockResolvedValue(4999999);
+
+      await expect(
+        service.completeUpload(USER_ID, PUBLIC_ID, { parts: PARTS }),
+      ).rejects.toBeInstanceOf(UploadSizeMismatchException);
+      expect(lifecycle.markFailed).toHaveBeenCalledWith(
+        'video-1',
+        'UPLOAD_SIZE_MISMATCH',
+        [VideoStatus.DRAFT],
+      );
+      expect(processingProducer.enqueueProcessing).not.toHaveBeenCalled();
+      expect(lifecycle.markProcessing).not.toHaveBeenCalled();
     });
   });
 

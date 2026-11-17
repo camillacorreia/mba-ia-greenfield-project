@@ -96,3 +96,23 @@ export class InvalidPartNumberException extends DomainException {
     );
   }
 }
+
+export class InvalidUploadPartsException extends DomainException {
+  constructor() {
+    super(
+      'INVALID_UPLOAD_PARTS',
+      400,
+      'Uploaded parts do not match the multipart upload',
+    );
+  }
+}
+
+export class UploadSizeMismatchException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_SIZE_MISMATCH',
+      422,
+      'Uploaded object size does not match the declared size',
+    );
+  }
+}

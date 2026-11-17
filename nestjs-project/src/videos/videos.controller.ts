@@ -16,6 +16,8 @@ import {
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PartUrlsResponseDto } from './dto/part-urls-response.dto';
@@ -115,5 +117,53 @@ export class VideosController {
     @Body() dto: RequestPartUrlsDto,
   ): Promise<PartUrlsResponseDto> {
     return this.videosService.requestPartUrls(user.sub, publicId, dto);
+  }
+
+  @Post(':publicId/upload/complete')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Closes the multipart upload with the part ETags, checks the stored size against the declared size and queues the video for processing. Poll GET /videos/:publicId to follow the result.',
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'Upload closed and video queued for processing',
+    type: CompleteUploadResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation failed, or the storage rejected the part list (INVALID_UPLOAD_PARTS)',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'Video does not exist or belongs to another channel (VIDEO_NOT_FOUND)',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is no longer a draft (VIDEO_NOT_DRAFT)',
+    schema: ERROR_SCHEMA,
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Stored object size differs from the declared size; the video is marked as failed (UPLOAD_SIZE_MISMATCH)',
+    schema: ERROR_SCHEMA,
+  })
+  async completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Body() dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResponseDto> {
+    return this.videosService.completeUpload(user.sub, publicId, dto);
   }
 }

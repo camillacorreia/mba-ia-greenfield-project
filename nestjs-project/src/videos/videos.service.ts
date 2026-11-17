@@ -7,18 +7,28 @@ import { isPgUniqueViolationOnColumn } from '../common/database/pg-errors';
 import {
   ChannelNotFoundException,
   InvalidPartNumberException,
+  InvalidUploadPartsException,
   UnsupportedVideoFormatException,
+  UploadSizeMismatchException,
   VideoNotDraftException,
   VideoNotFoundException,
   VideoTooLargeException,
 } from '../common/exceptions/domain.exception';
+import {
+  StorageInvalidPartsError,
+  StorageNoSuchUploadError,
+} from '../storage/storage.errors';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from '../video-processing/video-processing.producer';
+import type { CompleteUploadResponseDto } from './dto/complete-upload-response.dto';
+import type { CompleteUploadDto } from './dto/complete-upload.dto';
 import type { InitiateUploadResponseDto } from './dto/initiate-upload-response.dto';
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
 import type { PartUrlsResponseDto } from './dto/part-urls-response.dto';
 import type { RequestPartUrlsDto } from './dto/request-part-urls.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { generatePublicId, isValidPublicId } from './public-id.util';
+import { VideoLifecycleService } from './video-lifecycle.service';
 import {
   ALLOWED_VIDEO_CONTENT_TYPES,
   MAX_VIDEO_SIZE_BYTES,
@@ -38,6 +48,8 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    private readonly lifecycle: VideoLifecycleService,
+    private readonly processingProducer: VideoProcessingProducer,
   ) {}
 
   async initiateUpload(
@@ -136,6 +148,60 @@ export class VideosService {
       })),
     );
     return { parts, expires_in: PART_URL_EXPIRES_IN_SECONDS };
+  }
+
+  /**
+   * Ordem fixa (TD-01): CompleteMultipartUpload → HeadObject com o tamanho
+   * declarado → enqueue idempotente (`jobId = id`) → `draft → processing`. Se o
+   * processo cair entre o enqueue e a transição, o retry do cliente reenfileira
+   * sem duplicar e conclui a transição.
+   */
+  async completeUpload(
+    userId: string,
+    publicId: string,
+    dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResponseDto> {
+    const video = await this.findOwnedVideo(userId, publicId);
+    if (video.status !== VideoStatus.DRAFT || !video.upload_id) {
+      throw new VideoNotDraftException();
+    }
+
+    const parts = [...dto.parts]
+      .sort((a, b) => a.part_number - b.part_number)
+      .map((part) => ({ partNumber: part.part_number, etag: part.etag }));
+    try {
+      await this.storageService.completeVideoUpload(
+        video.id,
+        video.upload_id,
+        parts,
+      );
+    } catch (error) {
+      if (error instanceof StorageInvalidPartsError) {
+        throw new InvalidUploadPartsException();
+      }
+      // NoSuchUpload: um complete anterior pode ter fechado o multipart antes de
+      // a transição acontecer. Só segue se o objeto final existir (checado abaixo).
+      if (!(error instanceof StorageNoSuchUploadError)) {
+        throw error;
+      }
+    }
+
+    const objectSize = await this.storageService.headVideo(video.id);
+    if (objectSize === null) {
+      throw new InvalidUploadPartsException();
+    }
+    if (objectSize !== video.size_bytes) {
+      // O objeto original é mantido no bucket (TD-09).
+      await this.lifecycle.markFailed(video.id, 'UPLOAD_SIZE_MISMATCH', [
+        VideoStatus.DRAFT,
+      ]);
+      throw new UploadSizeMismatchException();
+    }
+
+    await this.processingProducer.enqueueProcessing(video.id);
+    await this.lifecycle.markProcessing(video.id);
+
+    return { public_id: video.public_id, status: VideoStatus.PROCESSING };
   }
 
   private async insertDraft(fields: Partial<Video>): Promise<Video> {

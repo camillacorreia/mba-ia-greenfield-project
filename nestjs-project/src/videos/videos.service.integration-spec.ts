@@ -1,12 +1,25 @@
-import { ListPartsCommand, S3Client } from '@aws-sdk/client-s3';
+import { randomBytes } from 'node:crypto';
+import {
+  DeleteObjectCommand,
+  ListPartsCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import type { Queue } from 'bullmq';
 import { DataSource } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { Channel } from '../channels/entities/channel.entity';
+import queueConfig from '../config/queue.config';
 import storageConfig from '../config/storage.config';
+import { bullRootOptions } from '../queue/bull-root.options';
+import {
+  PROCESS_VIDEO_JOB,
+  VIDEO_PROCESSING_QUEUE,
+} from '../video-processing/video-processing.constants';
 import { S3_INTERNAL_CLIENT } from '../storage/storage.constants';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -26,14 +39,22 @@ describe('VideosService (integration)', () => {
   let videosService: VideosService;
   let storageService: StorageService;
   let s3: S3Client;
+  let queue: Queue;
   let user: User;
   let channel: Channel;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] }),
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [storageConfig, queueConfig],
+        }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
+        BullModule.forRootAsync({
+          inject: [queueConfig.KEY],
+          useFactory: bullRootOptions,
+        }),
         VideosModule,
       ],
     }).compile();
@@ -41,13 +62,16 @@ describe('VideosService (integration)', () => {
     videosService = module.get(VideosService);
     storageService = module.get(StorageService);
     s3 = module.get(S3_INTERNAL_CLIENT);
+    queue = module.get(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
+    await queue.obliterate({ force: true });
     await module.close();
   });
 
   beforeEach(async () => {
+    await queue.obliterate({ force: true });
     await cleanAllTables(dataSource);
     user = await dataSource
       .getRepository(User)
@@ -157,5 +181,49 @@ describe('VideosService (integration)', () => {
       .getRepository(Video)
       .findOneByOrFail({ public_id: created.public_id });
     await storageService.abortVideoUpload(video.id, video.upload_id ?? '');
+  });
+
+  it('should complete a real upload, leave the video processing and queue process-video', async () => {
+    const bytes = randomBytes(64 * 1024);
+    const created = await videosService.initiateUpload(user.id, {
+      filename: 'aula.mp4',
+      size: bytes.length,
+      content_type: 'video/mp4',
+    });
+    const { parts } = await videosService.requestPartUrls(
+      user.id,
+      created.public_id,
+      { part_numbers: [1] },
+    );
+    const put = await fetch(parts[0].url, {
+      method: 'PUT',
+      body: new Uint8Array(bytes),
+    });
+
+    const result = await videosService.completeUpload(
+      user.id,
+      created.public_id,
+      { parts: [{ part_number: 1, etag: put.headers.get('etag') ?? '' }] },
+    );
+
+    const video = await dataSource
+      .getRepository(Video)
+      .findOneByOrFail({ public_id: created.public_id });
+    expect(result).toEqual({
+      public_id: created.public_id,
+      status: VideoStatus.PROCESSING,
+    });
+    expect(video.status).toBe(VideoStatus.PROCESSING);
+    expect(video.upload_id).toBeNull();
+    await expect(storageService.headVideo(video.id)).resolves.toBe(
+      bytes.length,
+    );
+    const job = await queue.getJob(video.id);
+    expect(job?.name).toBe(PROCESS_VIDEO_JOB);
+    expect(job?.data).toEqual({ videoId: video.id });
+
+    await s3.send(
+      new DeleteObjectCommand({ Bucket: 'videos-test', Key: video.id }),
+    );
   });
 });
