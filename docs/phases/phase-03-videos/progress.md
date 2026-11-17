@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/17 completed
+**SIs:** 7/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -59,9 +59,16 @@
   - `VideoMetadata.audio_codec` é `string | null` (arquivo sem áudio), conforme o Data Model.
 
 ### SI-03.7 — Endpoint POST /videos (início do upload e rascunho)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 22 passing (13 em `videos.service.spec.ts`, 3 em `videos.service.integration-spec.ts`, 6 em `test/videos-initiate-upload.e2e-spec.ts`); suíte completa verde (unit 231/231, e2e 58/58, tsc e lint com exit 0)
+- **Observations:**
+  - **Follow-up fora de escopo:** o detector de violação de unicidade do Postgres era privado do `channels.service.ts`. Pra seguir "o mesmo padrão" no retry de `public_id`, criei `src/common/database/pg-errors.ts` com `isPgUniqueViolationOnColumn` e usei só no `VideosService`. O `ChannelsService` ainda tem a cópia local; trocar pelo helper comum fica como tarefa separada.
+  - Criei `test/helpers/videos-e2e.ts` (`VideosE2eContext`): AppModule com a config global do `main.ts`, usuários por register → confirmação → login, e `reset()` que aborta os multiparts dos rascunhos, limpa as tabelas, faz `obliterate` da fila `video-processing` no prefixo de teste e zera o throttler. A ideia é reaproveitar nos outros 5 specs e2e de vídeo. O `test/auth.e2e-spec.ts` não foi alterado.
+  - A fila ainda não está registrada no `AppModule` (entra com o `complete` no SI-03.9), então o helper abre um `Queue` próprio com `bullRootOptions(queueConfig())` pra limpar os jobs de teste, como o spec pede.
+  - Constantes do upload em `src/videos/videos.constants.ts`: `MAX_VIDEO_SIZE_BYTES`, `UPLOAD_PART_SIZE_BYTES`, `ALLOWED_VIDEO_CONTENT_TYPES` e `PUBLIC_ID_MAX_RETRIES`.
+  - Se o abort de compensação também falhar, o erro do abort é logado e o erro original do insert é o que sobe (coberto no unit).
+  - O e2e confere que a resposta não traz `id`, `channel_id` nem `upload_id`. O integration confere com `ListParts` que o multipart existe no MinIO, e que ele é abortado quando o insert falha.
+  - O lint acusou acessos `any` nos mocks do unit e do integration; corrigido tipando `jest.fn<Promise<unknown>, [Video]>()` e o `uploadId` do spy.
 
 ### SI-03.8 — Endpoint POST /videos/:publicId/upload/part-urls (URLs de envio das partes)
 - **Status:** pending
