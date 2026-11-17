@@ -3,7 +3,8 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-17T12:56:47-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:09:32-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-17T13:23:30-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-11-17T13:23:51-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-17T12:56:47-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-17T12:56:47-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-17T12:56:47-03:00"
@@ -44,16 +45,20 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | phase | Backend | Background Job Queue Technology | decided | A (BullMQ on Redis via `@nestjs/bullmq`) | — |
+| phase-03-videos/TD-01 | phase | Backend | Background Job Queue Technology | decided | A (BullMQ on Redis via `@nestjs/bullmq`) | bullmq, @nestjs/bullmq, ioredis |
+|     └─ Last revision: 2026-11-17 — Libraries field filled with `bullmq` (^6.7.7), `@nestjs/bullmq` (^12.0.2) and… | | | | | | |
 | phase-03-videos/TD-02 | phase | Cross-layer | Large File Upload Protocol (up to 10GB, bytes bypass API) | decided | A (S3 multipart, presigned part URLs, API-orchestrated) | — |
-| phase-03-videos/TD-03 | phase | Backend | Object Storage Usage Layout (buckets, keys, presign endpoint) | decided | B (private `videos` + public-read `thumbnails`, keys by videoId) | — |
+| phase-03-videos/TD-03 | phase | Backend | Object Storage Usage Layout (buckets, keys, presign endpoint) | decided | B (private `videos` + public-read `thumbnails`, keys by videoId) | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
+|     └─ Last revision: 2026-11-17 — MinIO images pinned to the community fork: `pgsty/minio:RELEASE.2026-08-04T… | | | | | | |
 | phase-03-videos/TD-04 | phase | Backend | Video Worker Topology | decided | A (same Nest codebase, `createApplicationContext`, `video-worker` service) | — |
 | phase-03-videos/TD-05 | phase | Backend | Media Inspection and Thumbnail Extraction (FFmpeg/ffprobe) | decided | A (`execFile` on ffprobe/ffmpeg via presigned GET, no wrapper) | — |
 | phase-03-videos/TD-06 | phase | Cross-layer | Unique Public Video ID (URL strategy) | decided | B (11-char base64url `public_id`, UUID stays PK) | — |
 | phase-03-videos/TD-07 | phase | Cross-layer | Streaming and Download Delivery | decided | A (presigned GET URLs, storage serves 206, redirect contract) | — |
 | phase-03-videos/TD-08 | phase | Backend | Accepted Upload Formats and Playback Compatibility | decided | A (MP4/WebM allowlist + ffprobe codec check) | — |
 | phase-03-videos/TD-09 | phase | Backend | Video Status Lifecycle and Failure Handling | decided | D (single `status` enum draft → processing → ready / failed) | — |
+|     └─ Last revision: 2026-11-17 — New transition `draft → failed` for abandoned uploads. A scheduled job (BullMQ… | | | | | | |
 | phase-03-videos/TD-10 | phase | Backend | Testing Strategy for the Async Upload/Processing Pipeline | decided | A (real worker as a Compose service) | — |
+|     └─ Last revision: 2026-11-17 — Test isolation mechanism fixed. The e2e/integration test boots its own worker … | | | | | | |
 
 _Source files:_
 
@@ -79,7 +84,10 @@ _Source files:_
 
 **Recommendation:** With a single job type at low volume, the atomic "status + enqueue" write is free only under Option B because the queue lives in the same Postgres transaction, and it adds no service to Compose/CI/production. Option A is a close second and the better choice if the team values the official Nest module and the separate queue container of the target architecture.
 **Note:** Decision deliberately diverged from the Recommendation: BullMQ on Redis (Option A) was chosen over pg-boss (Option B) because the target architecture keeps the Message Queue as a container separate from the Database, job polling and locks stay off the transactional PostgreSQL, and `@nestjs/bullmq` is the official Nest module. The Recommendation above is kept as the research record; implementation follows the Decision, including the idempotent enqueue (`jobId = videoId`) before the `draft → processing` transition.
-**Libraries:** —
+**Libraries:** bullmq, @nestjs/bullmq, ioredis
+
+**Revisions:**
+- 2026-11-17 — Libraries field filled with `bullmq` (^6.7.7), `@nestjs/bullmq` (^12.0.2) and `ioredis` (^6.0.0); Redis image pinned to `redis:8.10.3-alpine`. Rationale: IC-1 of plan-validate, the decided Option A names BullMQ and `@nestjs/bullmq` but the Libraries field was empty. BullMQ 6 loads `ioredis` lazily as an optional peer dependency (it is no longer installed transitively), so `ioredis` must be a direct dependency for the default host/port connection. BullMQ 6 also removed the legacy repeatable API (`add(..., { repeat })`); scheduled jobs use Job Schedulers (`upsertJobScheduler`), see the TD-09 revision.
 
 ### phase-03-videos/TD-02
 
@@ -89,7 +97,12 @@ _Source files:_
 ### phase-03-videos/TD-03
 
 **Recommendation:** The public thumbnail bucket removes signing from every listing endpoint in later phases and keeps video bytes private, while keys by `videoId` keep storage independent of channel data. Common to every option and fixed here as the env contract (Joi schema + `compose.yaml` + `.env.example` + worker): `S3_ENDPOINT` (internal, `http://minio:9000`), `S3_PUBLIC_ENDPOINT` (signing host, `http://localhost:9000` in dev), `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` (`true` for MinIO), `S3_BUCKET_VIDEOS`, `S3_BUCKET_THUMBNAILS`. Buckets, policies and lifecycle rules are created by a one-shot `minio-init` Compose service (MinIO client `mc`), not by the application, mirroring production where buckets come from infrastructure.
-**Libraries:** —
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
+
+**Revisions:**
+- 2026-11-17 — S3 client fixed as AWS SDK v3: `@aws-sdk/client-s3` (^3.1170.0) for `CreateMultipartUpload`, `CompleteMultipartUpload`, `AbortMultipartUpload` and `HeadObject`, plus `@aws-sdk/s3-request-presigner` (^3.1170.0, same version line) for presigned `UploadPart` and `GetObject`. Rationale: MD-1 of plan-validate, no TD named the library; the same client works against MinIO (`forcePathStyle: true` + custom `endpoint`) and production S3, which this TD already requires.
+- 2026-11-17 — Signing endpoint fixed per consumer. URLs delivered to a client outside the Compose network (upload part URLs, stream and download redirects) are signed by the client configured with `S3_PUBLIC_ENDPOINT`. URLs consumed inside the Compose network (worker ffprobe/ffmpeg presigned GET from TD-05, integration and e2e tests running in the `nestjs-api` container) are signed with `S3_ENDPOINT`. In the test environment the API's client-facing signer therefore points to the internal host (`S3_PUBLIC_ENDPOINT=http://minio:9000` in the test env), since the test client lives inside the network. Rationale: AMB-2 of plan-validate, the host is part of the SigV4 signature and a URL signed for `localhost:9000` does not resolve from inside a container.
+- 2026-11-17 — MinIO images pinned to the community fork: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` for the `minio` service and `pgsty/mc:RELEASE.2026-11-12T00-00-00Z` for `minio-init`, both multi-arch (amd64/arm64) and verified with `docker manifest inspect`. Rationale: the official community-edition images are no longer published (`minio/minio` and `minio/mc` fail on any tag), and the Pigsty fork keeps explicit release tags with the same S3 API, so the decided Option B and the env contract stay unchanged.
 
 ### phase-03-videos/TD-04
 
@@ -122,10 +135,16 @@ _Source files:_
 **Note:** Decision deliberately diverged from the Recommendation: a single `status` with the lifecycle the phase scope asks for (Option D) was chosen over a separate `processing_status` (Option B), so the "rascunho" pre-registration is an explicit, named state in this phase. Visibility/publication stays out of this enum and becomes its own field in Phase 04. The Recommendation above is kept as the research record; implementation follows the Decision.
 **Libraries:** —
 
+**Revisions:**
+- 2026-11-17 — New transition `draft → failed` for abandoned uploads. A scheduled job (BullMQ Job Scheduler via `upsertJobScheduler`, on the same Redis/BullMQ infrastructure of TD-01, consumed by the `video-worker`) marks as `failed`, with reason `UPLOAD_EXPIRED`, every video in `draft` created more than 1 day ago, aligned with the TD-02 lifecycle rule that aborts incomplete multipart uploads after 1 day. For each expired draft it also tries `AbortMultipartUpload` on the storage (the row keeps the multipart `uploadId`; a `NoSuchUpload` answer means the lifecycle rule already aborted it and is not an error). The run cadence is an implementation parameter. Rationale: AMB-1 of plan-validate, without this rule an abandoned upload left the row in `draft` forever with a `public_id` allocated.
+
 ### phase-03-videos/TD-10
 
 **Recommendation:** It keeps every service real (MinIO, Redis-backed queue, FFmpeg) while giving the test full control of the worker lifecycle, which avoids the contamination of Option B under the shared-database, run-in-band constraint already in place. Fixtures: tiny committed media files (a ~1-2s H.264/AAC MP4, a WebM, and one unsupported-codec file for the TD-08 failure path), each under ~100KB, rather than generating them at test time. The 10GB limit is tested at the contract level (initiate rejects declared size > 10 GiB; complete rejects when `HeadObject` size disagrees), not by uploading 10GB.
 **Libraries:** —
+
+**Revisions:**
+- 2026-11-17 — Test isolation mechanism fixed. The e2e/integration test boots its own worker (the processor) through `createApplicationContext` or a `TestingModule`, configured with a queue prefix exclusive to tests (BullMQ `prefix` from env) and the test buckets; the Redis DB index alternative is dropped. Since the `video-worker` Compose service only listens on the runtime prefix, it never consumes test jobs. Rationale: AMB-4 of plan-validate, the Decision listed prefix or DB index as alternatives and did not state who runs the processor during tests.
 
 ## Inherited Decisions Detail
 
@@ -296,7 +315,11 @@ _No screen inventory — UI↔API sync deferred. Run /screen-inventory phase-03-
 
 ## Non-UI / Deferred Capabilities
 
-_None._
+| Capability | Status | Rationale | TD refs |
+|------------|--------|-----------|---------|
+| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance (tela de upload no `next-frontend/`) | deferred | deferred_to_next_phase (AMB-3, 2026-11-17): phase 03 is backend-only and the upload UI lands in a future frontend slice, following the phase-02-auth / phase-02-auth-frontend split. Pending for that slice: CORS on the MinIO `videos` bucket allowing `PUT` from the frontend origin with `ETag` in `ExposeHeaders` (the browser must read each part's `ETag` for `CompleteMultipartUpload`). The backend contract (initiate, part URLs, complete) ships in this phase. | phase-03-videos/TD-02, phase-03-videos/TD-03, phase-03-videos/TD-06 |
+| Reprodução via streaming (sem necessidade de download completo) (player no `next-frontend/`) | deferred | deferred_to_next_phase (AMB-3, 2026-11-17): phase 03 is backend-only. Pending for the frontend slice: the BFF must bridge the `302` redirect of `GET /videos/:publicId/stream`, since a `<video>` element cannot send the Bearer token. The backend redirect contract ships in this phase. | phase-03-videos/TD-07, phase-03-videos/TD-08 |
+| Download do vídeo pelo usuário (botão de download no `next-frontend/`) | deferred | deferred_to_next_phase (AMB-3, 2026-11-17): phase 03 is backend-only. Pending for the frontend slice: the same BFF bridging of the `302` redirect, for `GET /videos/:publicId/download`. The backend contract ships in this phase. | phase-03-videos/TD-07 |
 
 ## Testing Requirements
 

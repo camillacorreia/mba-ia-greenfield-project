@@ -53,6 +53,11 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
 
 **Note:** Decision deliberately diverged from the Recommendation: BullMQ on Redis (Option A) was chosen over pg-boss (Option B) because the target architecture keeps the Message Queue as a container separate from the Database, job polling and locks stay off the transactional PostgreSQL, and `@nestjs/bullmq` is the official Nest module. The Recommendation above is kept as the research record; implementation follows the Decision, including the idempotent enqueue (`jobId = videoId`) before the `draft → processing` transition.
 
+**Libraries:** bullmq, @nestjs/bullmq, ioredis
+
+**Revisions:**
+- 2026-11-17 — Libraries field filled with `bullmq` (^6.7.7), `@nestjs/bullmq` (^12.0.2) and `ioredis` (^6.0.0); Redis image pinned to `redis:8.10.3-alpine`. Rationale: IC-1 of plan-validate, the decided Option A names BullMQ and `@nestjs/bullmq` but the Libraries field was empty. BullMQ 6 loads `ioredis` lazily as an optional peer dependency (it is no longer installed transitively), so `ioredis` must be a direct dependency for the default host/port connection. BullMQ 6 also removed the legacy repeatable API (`add(..., { repeat })`); scheduled jobs use Job Schedulers (`upsertJobScheduler`), see the TD-09 revision.
+
 ---
 
 ## TD-02: Large File Upload Protocol (up to 10GB, bytes never pass through the API)
@@ -109,6 +114,13 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
 **Recommendation:** Option B. The public thumbnail bucket removes signing from every listing endpoint in later phases and keeps video bytes private, while keys by `videoId` keep storage independent of channel data. Common to every option and fixed here as the env contract (Joi schema + `compose.yaml` + `.env.example` + worker): `S3_ENDPOINT` (internal, `http://minio:9000`), `S3_PUBLIC_ENDPOINT` (signing host, `http://localhost:9000` in dev), `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` (`true` for MinIO), `S3_BUCKET_VIDEOS`, `S3_BUCKET_THUMBNAILS`. Buckets, policies and lifecycle rules are created by a one-shot `minio-init` Compose service (MinIO client `mc`), not by the application, mirroring production where buckets come from infrastructure.
 
 **Decision:** B (private `videos` bucket + public-read `thumbnails` bucket, keys by `videoId`), with the env contract and the `minio-init` bootstrap above. The MinIO image in Compose is pinned to an explicit tag (never `latest`); the exact tag is chosen in `/plan-resolve` (library refs).
+
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
+
+**Revisions:**
+- 2026-11-17 — S3 client fixed as AWS SDK v3: `@aws-sdk/client-s3` (^3.1170.0) for `CreateMultipartUpload`, `CompleteMultipartUpload`, `AbortMultipartUpload` and `HeadObject`, plus `@aws-sdk/s3-request-presigner` (^3.1170.0, same version line) for presigned `UploadPart` and `GetObject`. Rationale: MD-1 of plan-validate, no TD named the library; the same client works against MinIO (`forcePathStyle: true` + custom `endpoint`) and production S3, which this TD already requires.
+- 2026-11-17 — Signing endpoint fixed per consumer. URLs delivered to a client outside the Compose network (upload part URLs, stream and download redirects) are signed by the client configured with `S3_PUBLIC_ENDPOINT`. URLs consumed inside the Compose network (worker ffprobe/ffmpeg presigned GET from TD-05, integration and e2e tests running in the `nestjs-api` container) are signed with `S3_ENDPOINT`. In the test environment the API's client-facing signer therefore points to the internal host (`S3_PUBLIC_ENDPOINT=http://minio:9000` in the test env), since the test client lives inside the network. Rationale: AMB-2 of plan-validate, the host is part of the SigV4 signature and a URL signed for `localhost:9000` does not resolve from inside a container.
+- 2026-11-17 — MinIO images pinned to the community fork: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z` for the `minio` service and `pgsty/mc:RELEASE.2026-11-12T00-00-00Z` for `minio-init`, both multi-arch (amd64/arm64) and verified with `docker manifest inspect`. Rationale: the official community-edition images are no longer published (`minio/minio` and `minio/mc` fail on any tag), and the Pigsty fork keeps explicit release tags with the same S3 API, so the decided Option B and the env contract stay unchanged.
 
 ---
 
@@ -316,6 +328,9 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
 
 **Note:** Decision deliberately diverged from the Recommendation: a single `status` with the lifecycle the phase scope asks for (Option D) was chosen over a separate `processing_status` (Option B), so the "rascunho" pre-registration is an explicit, named state in this phase. Visibility/publication stays out of this enum and becomes its own field in Phase 04. The Recommendation above is kept as the research record; implementation follows the Decision.
 
+**Revisions:**
+- 2026-11-17 — New transition `draft → failed` for abandoned uploads. A scheduled job (BullMQ Job Scheduler via `upsertJobScheduler`, on the same Redis/BullMQ infrastructure of TD-01, consumed by the `video-worker`) marks as `failed`, with reason `UPLOAD_EXPIRED`, every video in `draft` created more than 1 day ago, aligned with the TD-02 lifecycle rule that aborts incomplete multipart uploads after 1 day. For each expired draft it also tries `AbortMultipartUpload` on the storage (the row keeps the multipart `uploadId`; a `NoSuchUpload` answer means the lifecycle rule already aborted it and is not an error). The run cadence is an implementation parameter. Rationale: AMB-1 of plan-validate, without this rule an abandoned upload left the row in `draft` forever with a `public_id` allocated.
+
 ---
 
 ## TD-10: Testing Strategy for the Async Upload/Processing Pipeline
@@ -350,6 +365,9 @@ Inherited constraints (not reopened): `@nestjs/config` + Joi env validation with
   - The e2e spec boots the `WorkerModule` processor inside the Jest process and runs the full initiate → parts → complete → `ready`/`failed` flow against real MinIO, Redis, PostgreSQL and FFmpeg.
   - So that the always-running Compose worker does not consume test jobs, the test environment isolates its queue namespace (BullMQ `prefix` or a dedicated Redis DB index via env) and uses dedicated test buckets (e.g. `S3_BUCKET_VIDEOS=streamtube-videos-test`), created by the same `minio-init` service. Queue name and code path stay identical; only the namespace differs.
   - Fixtures and the contract-level 10GB tests follow the Recommendation. `cleanAllTables` gains the `videos` table, and the test queue namespace is obliterated between suites.
+
+**Revisions:**
+- 2026-11-17 — Test isolation mechanism fixed. The e2e/integration test boots its own worker (the processor) through `createApplicationContext` or a `TestingModule`, configured with a queue prefix exclusive to tests (BullMQ `prefix` from env) and the test buckets; the Redis DB index alternative is dropped. Since the `video-worker` Compose service only listens on the runtime prefix, it never consumes test jobs. Rationale: AMB-4 of plan-validate, the Decision listed prefix or DB index as alternatives and did not state who runs the processor during tests.
 
 ---
 
