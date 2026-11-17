@@ -17,6 +17,32 @@ services:
       minio-init:
         condition: service_completed_successfully
 
+  # Consumer da fila video-processing (processo Nest sem HTTP). Sobe junto com o
+  # `docker compose up -d`, diferente do servidor HTTP da API, que só sobe sob pedido.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/home/node/app
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - >-
+        until [ -x node_modules/.bin/nest ]; do
+        echo 'video-worker: aguardando node_modules, rode docker compose exec nestjs-api npm install';
+        sleep 5;
+        done;
+        exec npm run start:worker:dev
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
   db:
     image: postgres:17
     ports:

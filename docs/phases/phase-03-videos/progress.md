@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 15/17 completed
+**SIs:** 16/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
 - **Status:** completed
@@ -128,9 +128,17 @@
   - Efeito colateral nos testes: o `startTestProcessor()` agora também registra o scheduler, que gera um `expire-drafts` no prefixo de teste ao subir. É inofensivo (os testes do pipeline só criam vídeos recentes e fazem `obliterate` no `beforeEach`), e a suíte completa passou.
 
 ### SI-03.13 — Entrypoint do worker e serviço video-worker no Compose
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 1 passing (`src/worker.module.spec.ts`); suíte completa verde com o `video-worker` no ar (unit 344/344, e2e 83/83, tsc e lint com exit 0); ACs de ambiente conferidos à mão (abaixo)
+- **Observations:**
+  - **Bug de fiação pego pelo spec do módulo:** com `autoLoadEntities`, o worker só registrava `Video` e `Channel`. Como `Channel` tem relação com `User`, o TypeORM falhava com `Entity metadata for Channel#user was not found` e ficava em retry infinito (o spec travava). O `startTestProcessor()` não pegava isso porque lista as entidades na mão. Correção: o `WorkerModule` importa o `UsersModule`, dono do `User`. O `ChannelsModule` não pode importar o `UsersModule`, porque o `UsersModule` já importa o `ChannelsModule`.
+  - **Exclude do `dist-worker`:** o `tsconfig.worker.json` herda o `exclude` do `tsconfig.build.json`, que substitui o do `tsconfig.json`. Sem `dist-worker` ali, o watch do worker lia os próprios `.d.ts` como entrada e falhava com `TS5055`. O `dist-worker` entrou no `exclude` do `tsconfig.build.json` (vale para o build da API e para o worker), além do `tsconfig.json`, do `.gitignore` e dos `ignores` do ESLint (que também ganhou `dist/**`).
+  - **`nest start --path`:** a doc do context7 (`/nestjs/docs.nestjs.com`) só confirma `--path` como caminho do tsconfig, sem detalhar o `outDir`. Confirmado na prática: o `start:worker:dev` gera a saída em `dist-worker/` e o `npm run build` continua em `dist/`.
+  - `src/config/config-module.options.ts` (`configModuleOptions`) concentra `load` + `envValidationSchema` + `validationOptions`, usado pelo `AppModule` e pelo `WorkerModule`. Não estava nas ações do plano, mas evita duplicar a lista de configs que o plano pede igual nos dois.
+  - O `command` do `video-worker` está em forma de lista (`sh`, `-c`, script em bloco `>-`), porque a mensagem de espera tem `video-worker: ` e o YAML não aceita `: ` num valor sem aspas.
+  - ACs de ambiente conferidos: `docker compose up -d` sobe o `video-worker` `running`, sem porta, com o log `Video worker ready, consuming "video-processing" with prefix "streamtube" on redis:6379`; `depends_on` com `db`/`redis` healthy e `minio-init` completed. `kill -TERM 1` dentro do container → volta sozinho (`RestartCount` 0 → 1); `docker compose stop video-worker` → fica `exited`. Um `npm run build` na API com o worker no ar não reinicia nem recompila o worker. `dist/worker.js` existe e `node dist/worker` sobe pronto. `GET /` responde 200 depois da extração do `buildTypeOrmOptions`.
+  - AC do clone sem `node_modules`: simulado com a mesma imagem e o mesmo `command` num diretório vazio em `$HOME` (o `/tmp` do macOS não é compartilhado com o Docker Desktop, a primeira tentativa não refletia os arquivos). O container fica avisando a cada 5s sem crash e, quando `node_modules/.bin/nest` aparece, segue sozinho para o `start:worker:dev`.
+  - AC de runtime ponta a ponta, feito do host por HTTP com a API compilada em segundo plano e um usuário confirmado temporário: login, `POST /videos`, URL da parte em `localhost:9000`, PUT da fixture, complete e polling até `ready` (1,534s, 320x240, h264/aac), thumbnail pública 200 `image/jpeg`, stream com `Range` 206. Um job com prefixo `streamtube-test` continuou em `waiting` com só o `video-worker` no ar. Os dados temporários (usuário, refresh tokens, canal, vídeo, objeto e thumbnail) foram apagados e a API em segundo plano foi encerrada.
 
 ### SI-03.14 — Endpoint GET /videos/:publicId (estado do vídeo)
 - **Status:** completed
