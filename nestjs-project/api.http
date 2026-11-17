@@ -10,6 +10,11 @@
 @accessToken = {{login.response.body.$.access_token}}
 @refreshToken = {{login.response.body.$.refresh_token}}
 
+# Vídeos — capturados automaticamente das respostas da seção de vídeos
+@publicId = {{initiateUpload.response.body.$.public_id}}
+@partUrl = {{partUrls.response.body.$.parts[0].url}}
+@partEtag = {{uploadPart.response.headers.ETag}}
+
 # Tokens obtidos via e-mail — preencher manualmente após consultar http://localhost:8025
 @confirmationToken = <token do e-mail de confirmacao>
 @resetToken = <token do e-mail de reset>
@@ -118,3 +123,69 @@ Content-Type: {{contentType}}
   "token": "{{resetToken}}",
   "new_password": "new-password123"
 }
+
+
+###
+# ─────────────────────────────────────────────
+# VÍDEOS (requer login e o video-worker no ar)
+# Rode em ordem: início → URLs das partes → PUT da parte → complete → estado.
+# A fixture abaixo tem 13403 bytes e cabe em uma parte (part_size = 100 MiB).
+# ─────────────────────────────────────────────
+
+### 10. Iniciar upload — cria o rascunho e abre o multipart (201, public_id capturado)
+# title é opcional (1..100); sem ele, o rascunho usa o nome do arquivo sem extensão
+# @name initiateUpload
+POST {{baseUrl}}/videos
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Aula 1: introdução",
+  "filename": "sample-h264-aac.mp4",
+  "size": 13403,
+  "content_type": "video/mp4"
+}
+
+
+### 11. URLs pré-assinadas das partes, válidas por 1h (200, url da parte 1 capturada)
+# @name partUrls
+POST {{baseUrl}}/videos/{{publicId}}/upload/part-urls
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "part_numbers": [1]
+}
+
+
+### 12. Enviar a parte 1 direto ao storage, sem passar pela API (200 do MinIO, ETag capturado)
+# @name uploadPart
+PUT {{partUrl}}
+
+< ./test/fixtures/media/sample-h264-aac.mp4
+
+
+### 13. Fechar o upload e enfileirar o processamento (202, status processing)
+# O ETag já vem entre aspas do storage, por isso a variável fica sem aspas no JSON.
+POST {{baseUrl}}/videos/{{publicId}}/upload/complete
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "parts": [{ "part_number": 1, "etag": {{partEtag}} }]
+}
+
+
+### 14. Estado do vídeo — repetir até sair de processing (200, title, ready com metadados e thumbnail_url)
+GET {{baseUrl}}/videos/{{publicId}}
+Authorization: Bearer {{accessToken}}
+
+
+### 15. Streaming — 302 para a URL pré-assinada, que atende Range com 206 (só em ready)
+GET {{baseUrl}}/videos/{{publicId}}/stream
+Authorization: Bearer {{accessToken}}
+
+
+### 16. Download — 302 para a URL pré-assinada com Content-Disposition attachment (só em ready)
+GET {{baseUrl}}/videos/{{publicId}}/download
+Authorization: Bearer {{accessToken}}

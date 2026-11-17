@@ -8,8 +8,9 @@ import {
 import { User } from '../users/entities/user.entity';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
+import { Video } from '../videos/entities/video.entity';
 
-const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken];
+const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
 describe('ChannelsService (integration)', () => {
   let dataSource: DataSource;
@@ -87,6 +88,25 @@ describe('ChannelsService (integration)', () => {
 
       const channels = await channelRepository.find();
       expect(channels).toHaveLength(2);
+    });
+  });
+
+  describe('findByUserId', () => {
+    it('returns the channel created for the user', async () => {
+      const user = await createUser();
+      const created = await channelsService.createChannel(user.id, user.email);
+
+      const found = await channelsService.findByUserId(user.id);
+
+      expect(found?.id).toBe(created.id);
+    });
+
+    it('returns null for a user id without channel', async () => {
+      const userWithoutChannel = await createUser();
+
+      await expect(
+        channelsService.findByUserId(userWithoutChannel.id),
+      ).resolves.toBeNull();
     });
   });
 });

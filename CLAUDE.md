@@ -20,10 +20,10 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
 - **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
-- **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
+- **Video Worker** (FFmpeg) → the `video-worker` Compose service, a separate Nest process from the same `nestjs-project/` codebase (`src/worker.ts`); consumes jobs from the queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (S3/MinIO) → video files and thumbnails (`minio` service, buckets created by `minio-init`)
+- **Message Queue** (BullMQ on Redis) → `video-processing` job queue (`redis` service)
 - **Email Service** (SMTP) → account confirmation and password recovery
 
 ## Docker Networking
@@ -105,3 +105,12 @@ Skip documentation lookup only for trivial operations such as:
 
 If a library is involved and there is uncertainty, documentation lookup is mandatory.
 If the documentation returned does not match the installed version, flag the discrepancy before proceeding.
+
+## Videos (phase 03)
+
+Implemented in `nestjs-project/`, all started by `docker compose up -d` there (`redis`, `minio`, `minio-init`, `video-worker`; the API HTTP server still only runs on request).
+
+- **Upload:** the client asks the API to start an upload (`POST /videos`), gets signed part URLs (`POST /videos/:publicId/upload/part-urls`), sends the bytes straight to MinIO and closes it (`POST /videos/:publicId/upload/complete`). Up to 10 GiB, `video/mp4` or `video/webm`, with an optional `title` (defaults to the file name without extension); the video is a `draft` until then. The `videos` row keeps the owner channel, `title`, `status`, the storage keys of the original (`storage_key`) and of the thumbnail (`thumbnail_key`), duration and media metadata, and the unique `public_id`. Code: `src/videos/` (`VideosController`, `VideosService`) and `src/storage/` (`StorageService`).
+- **Processing:** complete enqueues `process-video` on the BullMQ queue `video-processing` (`src/video-processing/video-processing.producer.ts`). The `video-worker` (`src/worker.ts` → `WorkerModule` → `VideoProcessingModule`) runs ffprobe, validates container and codecs, generates the thumbnail with ffmpeg and marks the video `ready` or `failed`. An hourly `expire-drafts` job fails drafts abandoned for more than 24h.
+- **Playback:** `GET /videos/:publicId` returns title, status and metadata; `/stream` and `/download` redirect to signed MinIO URLs, so streaming (HTTP `Range`) and downloads never go through the API. Each video has a unique 11-character `public_id`; the internal `id` is never exposed.
+- **Details:** modules, status lifecycle, failure reasons and environment variables are documented in `nestjs-project/CLAUDE.md` → "Videos"; the HTTP contract is in `nestjs-project/openapi.json` (tag `videos`) and runnable examples in `nestjs-project/api.http`.
