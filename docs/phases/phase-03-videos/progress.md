@@ -1,6 +1,6 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 17/17 completed
 
 ### SI-03.1 — Infra: dependências, Redis, MinIO e ffmpeg no ambiente
